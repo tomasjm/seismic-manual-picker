@@ -14,9 +14,12 @@ from PyQt5.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QToolBar,
+    QComboBox,
+    QShortcut,
 )
-from PyQt5.QtCore import QEvent, QObject, Qt
-from PyQt5.QtGui import QIcon
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QKeySequence
+from PyQt5.QtGui import QIcon, QKeyEvent
 import matplotlib
 
 matplotlib.use("Qt5Agg")
@@ -42,9 +45,36 @@ class SeismicPlotter(QMainWindow):
         self.filter = False
         self.trigger = False
         self.filter_params = None  # Store filter parameters
+        self.marker_line = None  # Matplotlib line for P Wave marker
+        self.dragging = False  # Flag to indicate if marker is being dragged
         print(self.group_sac_files("test_folder"))
 
         self.initUI()
+        self.setupShortcuts()
+
+    def setupShortcuts(self):
+        QShortcut(
+            QKeySequence(Qt.Key_Left), self, activated=lambda: self.navigate_traces(-1)
+        )
+        QShortcut(
+            QKeySequence(Qt.Key_Up), self, activated=lambda: self.navigate_traces(-1)
+        )
+        QShortcut(
+            QKeySequence(Qt.Key_Right), self, activated=lambda: self.navigate_traces(1)
+        )
+        QShortcut(
+            QKeySequence(Qt.Key_Down), self, activated=lambda: self.navigate_traces(1)
+        )
+        QShortcut(QKeySequence(Qt.Key_F), self, activated=self.toggle_filter)
+        QShortcut(QKeySequence(Qt.Key_Escape), self, activated=self.clear_focus)
+        QShortcut(QKeySequence(Qt.Key_R), self, activated=self.reload_plot)
+
+    def clear_focus(self):
+        focused_widget = QApplication.focusWidget()
+        if focused_widget:
+            focused_widget.clearFocus()
+        # Deselect the current item in the toolbar
+        self.toolbar.clear()
 
     def initUI(self):
         # Central widget
@@ -59,8 +89,8 @@ class SeismicPlotter(QMainWindow):
         central_widget.setLayout(main_layout)
 
         # Toolbar for navigation (zoom, pan, etc.)
-        toolbar = QToolBar("Matplotlib Toolbar")
-        self.addToolBar(toolbar)
+        self.toolbar = QToolBar("Matplotlib Toolbar")
+        self.addToolBar(self.toolbar)
 
         # Matplotlib Figure and Canvas
         self.figure = Figure()
@@ -101,21 +131,28 @@ class SeismicPlotter(QMainWindow):
         p_wave_layout.addWidget(set_p_wave_btn)
         sidebar.addLayout(p_wave_layout)
 
-        # Bandpass Filter Controls
-        sidebar.addWidget(QLabel("Bandpass Filter:"))
+        # Filter Controls
+        sidebar.addWidget(QLabel("Filter:"))
         filter_layout = QHBoxLayout()
+
+        self.filter_type_combo = QComboBox()
+        self.filter_type_combo.addItems(["Bandpass", "Highpass", "Lowpass"])
+        filter_layout.addWidget(self.filter_type_combo)
+
         self.min_freq_input = QLineEdit()
         self.min_freq_input.setPlaceholderText("Min Freq (Hz)")
         self.max_freq_input = QLineEdit()
         self.max_freq_input.setPlaceholderText("Max Freq (Hz)")
         self.offset_input = QLineEdit()
         self.offset_input.setPlaceholderText("Offset (s)")
+
         filter_layout.addWidget(self.min_freq_input)
         filter_layout.addWidget(self.max_freq_input)
         filter_layout.addWidget(self.offset_input)
         sidebar.addLayout(filter_layout)
+
         apply_filter_btn = QPushButton("Apply Filter")
-        apply_filter_btn.clicked.connect(self.apply_bandpass_filter)
+        apply_filter_btn.clicked.connect(self.apply_filter)
         sidebar.addWidget(apply_filter_btn)
 
         # STA/LTA Trigger Controls
@@ -206,7 +243,6 @@ class SeismicPlotter(QMainWindow):
         return file_groups
 
     def plot_traces(self, selected_group_key=None):
-        filtered = self.filter
         self.ax.clear()
         colors = matplotlib.cm.get_cmap("tab10")
 
@@ -217,37 +253,41 @@ class SeismicPlotter(QMainWindow):
         if self.trigger:
             self.calculate_trigger_for_selected()
 
-        st = (
-            self.filtered_traces[selected_group_key]
-            if filtered
-            else self.traces[selected_group_key]
-        )
+        if self.filter and selected_group_key in self.filtered_traces:
+            st = self.filtered_traces[selected_group_key]
+        else:
+            st = self.traces[selected_group_key]
 
         for tr in st:
-            times = np.linspace(
-                0, tr.stats.endtime - tr.stats.starttime, num=len(tr.data)
-            )
-            self.ax.plot(times, tr.data, label=tr.id)
+            if tr.id.endswith("Z"):  # Only plot Z channel
+                times = np.linspace(
+                    0, tr.stats.endtime - tr.stats.starttime, num=len(tr.data)
+                )
+                self.ax.plot(times, tr.data, label=tr.id, color="black", linewidth=0.5)
 
-            # Plot trigger points if available
-            if (
-                selected_group_key in self.triggers
-                and tr.id in self.triggers[selected_group_key]
-            ):
-                trigger_times = self.triggers[selected_group_key][tr.id]
-                for on, off in trigger_times:
-                    self.ax.axvline(times[on], color="green", linestyle="--", alpha=0.7)
-                    self.ax.axvline(times[off], color="red", linestyle="--", alpha=0.7)
+                # Plot trigger points if available
+                # if (
+                #     selected_group_key in self.triggers
+                #     and tr.id in self.triggers[selected_group_key]
+                # ):
+                # trigger_times = self.triggers[selected_group_key][tr.id]
+                # for on, off in trigger_times:
+                #     self.ax.axvline(times[on], color="green", linestyle="--", alpha=0.7)
+                #     self.ax.axvline(times[off], color="red", linestyle="--", alpha=0.7)
 
         # Plot P wave marker
         if self.p_wave_time is not None:
-            self.ax.axvline(
+            self.marker_line = self.ax.axvline(
                 self.p_wave_time, color="red", linestyle="--", label="P Wave"
             )
 
         self.ax.set_xlabel("Time (s)")
         self.ax.set_ylabel("Amplitude")
-        self.ax.set_title("Filtered Seismic Traces" if filtered else "Seismic Traces")
+        self.ax.set_title(
+            "Filtered Seismic Traces (Z Channel)"
+            if self.filter
+            else "Seismic Traces (Z Channel)"
+        )
         self.ax.legend(loc="upper right")
         self.ax.grid(True)
 
@@ -280,6 +320,10 @@ class SeismicPlotter(QMainWindow):
             if self.filter and self.filter_params:
                 self.apply_filter_to_selected()
 
+            # Calculate trigger and update P wave marker
+            if self.trigger:
+                self.calculate_trigger_for_selected()
+
             selected_trace = group_key
             self.plot_traces(selected_group_key=selected_trace)
 
@@ -304,9 +348,11 @@ class SeismicPlotter(QMainWindow):
             )
 
     def on_click(self, event):
+        print("clicking")
         if event.inaxes != self.ax:
             return
         if self.marker_line:
+            print("clicking marker")
             contains, _ = self.marker_line.contains(event)
             if contains:
                 self.dragging = True
@@ -330,19 +376,38 @@ class SeismicPlotter(QMainWindow):
     def on_release(self, event):
         self.dragging = False
 
-    def apply_bandpass_filter(self):
+    def apply_filter(self):
         try:
-            min_freq = float(self.min_freq_input.text())
-            max_freq = float(self.max_freq_input.text())
+            filter_type = self.filter_type_combo.currentText().lower()
+            min_freq = (
+                float(self.min_freq_input.text())
+                if self.min_freq_input.text()
+                else None
+            )
+            max_freq = (
+                float(self.max_freq_input.text())
+                if self.max_freq_input.text()
+                else None
+            )
             offset = float(self.offset_input.text()) if self.offset_input.text() else 0
 
-            if min_freq >= max_freq:
+            if filter_type == "bandpass" and (min_freq is None or max_freq is None):
                 raise ValueError(
-                    "Minimum frequency must be less than maximum frequency"
+                    "Both minimum and maximum frequencies are required for bandpass filter"
+                )
+            elif filter_type == "highpass" and min_freq is None:
+                raise ValueError("Minimum frequency is required for highpass filter")
+            elif filter_type == "lowpass" and max_freq is None:
+                raise ValueError("Maximum frequency is required for lowpass filter")
+
+            if filter_type == "bandpass" and min_freq >= max_freq:
+                raise ValueError(
+                    "Minimum frequency must be less than maximum frequency for bandpass filter"
                 )
 
             # Store filter parameters
             self.filter_params = {
+                "type": filter_type,
                 "min_freq": min_freq,
                 "max_freq": max_freq,
                 "offset": offset,
@@ -352,7 +417,9 @@ class SeismicPlotter(QMainWindow):
             self.apply_filter_to_selected()
 
             QMessageBox.information(
-                self, "Success", "Bandpass filter parameters set successfully"
+                self,
+                "Success",
+                f"{filter_type.capitalize()} filter parameters set successfully",
             )
 
         except ValueError as e:
@@ -375,11 +442,24 @@ class SeismicPlotter(QMainWindow):
 
         try:
             filtered_st = st.copy()
-            filtered_st.filter(
-                "bandpass",
-                freqmin=self.filter_params["min_freq"],
-                freqmax=self.filter_params["max_freq"],
-            )
+            filter_type = self.filter_params["type"]
+
+            if filter_type == "bandpass":
+                filtered_st.filter(
+                    "bandpass",
+                    freqmin=self.filter_params["min_freq"],
+                    freqmax=self.filter_params["max_freq"],
+                )
+            elif filter_type == "highpass":
+                filtered_st.filter(
+                    "highpass",
+                    freq=self.filter_params["min_freq"],
+                )
+            elif filter_type == "lowpass":
+                filtered_st.filter(
+                    "lowpass",
+                    freq=self.filter_params["max_freq"],
+                )
 
             # Apply offset
             for tr in filtered_st:
@@ -407,6 +487,9 @@ class SeismicPlotter(QMainWindow):
             QMessageBox.information(
                 self, "Success", "STA/LTA trigger parameters set successfully"
             )
+
+            # Replot after changing trigger settings
+            self.reload_plot()
         except ValueError as e:
             QMessageBox.warning(self, "Input Error", str(e))
         except Exception as e:
@@ -441,6 +524,7 @@ class SeismicPlotter(QMainWindow):
         print(f"STA: {self.sta}, LTA: {self.lta}, Threshold: {self.threshold}")
 
         self.triggers[group_key] = {}
+        first_trigger_time = None
         for tr in st:
             print(f"Processing trace: {tr.id}")
             print(f"Trace stats: {tr.stats}")
@@ -461,15 +545,17 @@ class SeismicPlotter(QMainWindow):
             if len(on_off) > 0:
                 print(f"Trigger saved for {tr.id}")
                 self.triggers[group_key][tr.id] = on_off
-                # Set the first trigger as P wave mark
-                if self.p_wave_time is None:
-                    self.p_wave_time = on_off[0][0] / tr.stats.sampling_rate
-                    self.p_wave_input.setText(f"{self.p_wave_time:.2f}")
-                    print(f"P wave time set to {self.p_wave_time:.2f}")
+                trigger_time = on_off[0][0] / tr.stats.sampling_rate
+                if first_trigger_time is None or trigger_time < first_trigger_time:
+                    first_trigger_time = trigger_time
             else:
                 print(f"No triggers found for {tr.id}")
 
-        if not any(self.triggers[group_key]):
+        if first_trigger_time is not None:
+            self.p_wave_time = first_trigger_time
+            self.p_wave_input.setText(f"{self.p_wave_time:.2f}")
+            print(f"P wave time updated to {self.p_wave_time:.2f}")
+        elif not any(self.triggers[group_key]):
             print("No triggers found for any trace in this group")
 
     def apply_trigger_to_selected(self):
@@ -498,26 +584,27 @@ class SeismicPlotter(QMainWindow):
                     self, "Error", f"Failed to save plot.\nError: {str(e)}"
                 )
 
-    def eventFilter(self, a0: QObject | None, a1: QEvent | None) -> bool:
-        key = a0
-        event = a1
-
-        if key is not None and event is not None:
-            if event.type() == QEvent.KeyPress:
-                key = event.key()
-                if key == Qt.Key_Left or key == Qt.Key_Up:
-                    self.navigate_traces(-1)
-                    return True
-                elif key == Qt.Key_Right or key == Qt.Key_Down:
-                    self.navigate_traces(1)
-                    return True
-        return super().eventFilter(a0, a1)
+    def toggle_filter(self):
+        print("trying to toggle filter")
+        self.filter = not self.filter
+        current_item = self.trace_list.currentItem()
+        if current_item:
+            self.plot_selected_trace(current_item)
+        QMessageBox.information(
+            self, "Filter Toggle", f"Filter is now {'on' if self.filter else 'off'}"
+        )
 
     def navigate_traces(self, direction):
         current_index = self.trace_list.currentRow()
         new_index = current_index + direction
         if 0 <= new_index < self.trace_list.count():
             self.plot_selected_trace(new_index)
+
+    def reload_plot(self):
+        current_item = self.trace_list.currentItem()
+        if current_item:
+            self.plot_selected_trace(current_item)
+        QMessageBox.information(self, "Reload", "Plot reloaded successfully")
 
 
 def main():
