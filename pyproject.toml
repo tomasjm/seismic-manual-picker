@@ -1,0 +1,14 @@
+[project]
+name = "gui"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "matplotlib",
+    "nicegui>=2.3.0",
+    "numpy>=2.1.1",
+    "obspy>=1.4.1",
+    "pyqt5",
+    "pyside6>=6.7.3",
+]
