@@ -19,7 +19,7 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QKeySequence
-from PyQt5.QtGui import QIcon, QKeyEvent
+from PyQt5.QtGui import QIcon
 import matplotlib
 
 matplotlib.use("Qt5Agg")
@@ -29,6 +29,7 @@ from matplotlib.figure import Figure
 from obspy import read
 from obspy.signal.trigger import classic_sta_lta, trigger_onset
 import numpy as np
+import pandas as pd
 
 
 class SeismicPlotter(QMainWindow):
@@ -47,10 +48,24 @@ class SeismicPlotter(QMainWindow):
         self.filter_params = None  # Store filter parameters
         self.marker_line = None  # Matplotlib line for P Wave marker
         self.dragging = False  # Flag to indicate if marker is being dragged
+        self.data_file = "data.csv"
         print(self.group_sac_files("test_folder"))
 
         self.initUI()
         self.setupShortcuts()
+        self.load_data_from_csv()
+
+    def load_data_from_csv(self):
+        if os.path.exists(self.data_file):
+            self.data_df = pd.read_csv(self.data_file, index_col="trace_path")
+        else:
+            self.data_df = pd.DataFrame(columns=["trace_path", "p_wave_frame"])
+            self.data_df.set_index("trace_path", inplace=True)
+
+    def save_data_to_csv(self):
+        self.data_df.to_csv(self.data_file)
+        print("saving csv")
+        print(self.data_df)
 
     def setupShortcuts(self):
         QShortcut(
@@ -203,10 +218,14 @@ class SeismicPlotter(QMainWindow):
                 try:
                     item = QListWidgetItem(group_key)
                     self.trace_list.addItem(item)
+                    if group_key not in self.data_df.index:
+                        self.data_df.loc[group_key] = [None]
                 except Exception as e:
                     QMessageBox.critical(
                         self, "Error", f"Failed to load {group_key}.\nError: {str(e)}"
                     )
+
+            self.save_data_to_csv()
 
             # Select and plot the first item
             if self.trace_list.count() > 0:
@@ -258,22 +277,10 @@ class SeismicPlotter(QMainWindow):
         else:
             st = self.traces[selected_group_key]
 
-        for tr in st:
-            if tr.id.endswith("Z"):  # Only plot Z channel
-                times = np.linspace(
-                    0, tr.stats.endtime - tr.stats.starttime, num=len(tr.data)
-                )
-                self.ax.plot(times, tr.data, label=tr.id, color="black", linewidth=0.5)
+        tr = st.select(channel="*Z")[0]
 
-                # Plot trigger points if available
-                # if (
-                #     selected_group_key in self.triggers
-                #     and tr.id in self.triggers[selected_group_key]
-                # ):
-                # trigger_times = self.triggers[selected_group_key][tr.id]
-                # for on, off in trigger_times:
-                #     self.ax.axvline(times[on], color="green", linestyle="--", alpha=0.7)
-                #     self.ax.axvline(times[off], color="red", linestyle="--", alpha=0.7)
+        times = np.linspace(0, tr.stats.endtime - tr.stats.starttime, num=len(tr.data))
+        self.ax.plot(times, tr.data, label=tr.id, color="black", linewidth=0.5)
 
         # Plot P wave marker
         if self.p_wave_time is not None:
@@ -324,6 +331,19 @@ class SeismicPlotter(QMainWindow):
             if self.trigger:
                 self.calculate_trigger_for_selected()
 
+            # Load P-wave arrival time from CSV
+            if group_key in self.data_df.index and pd.notnull(
+                self.data_df.loc[group_key, "p_wave_frame"]
+            ):
+                p_wave_frame = self.data_df.loc[group_key, "p_wave_frame"]
+                st = self.traces[group_key]
+                tr = st.select(channel="*Z")[0]
+                wave_offset = 0
+                if self.filter:
+                    wave_offset = int(self.filter_params["offset"])
+                self.p_wave_time = p_wave_frame / tr.stats.sampling_rate - wave_offset
+                self.p_wave_input.setText(f"{self.p_wave_time:.2f}")
+
             selected_trace = group_key
             self.plot_traces(selected_group_key=selected_trace)
 
@@ -340,12 +360,29 @@ class SeismicPlotter(QMainWindow):
                     self.ax.legend(loc="upper right")
                 self.p_wave_time = time
                 self.canvas.draw()
+
+                self.save_p_wave_time_to_csv()
+
         except ValueError:
             QMessageBox.warning(
                 self,
                 "Input Error",
                 "Please enter a valid numerical value for P Wave time.",
             )
+
+    def save_p_wave_time_to_csv(self):
+        current_item = self.trace_list.currentItem()
+        if current_item:
+            print("updating csv")
+            group_key = current_item.text()
+            st = self.traces[group_key]
+            tr = st.select(channel="*Z")[0]
+            p_wave_frame = int(self.p_wave_time * tr.stats.sampling_rate)
+            wave_offset = 0
+            if self.filter:
+                wave_offset = int(self.filter_params["offset"] * tr.stats.sampling_rate)
+            self.data_df.loc[group_key, "p_wave_frame"] = p_wave_frame + wave_offset
+            self.save_data_to_csv()
 
     def on_click(self, event):
         print("clicking")
@@ -375,6 +412,7 @@ class SeismicPlotter(QMainWindow):
 
     def on_release(self, event):
         self.dragging = False
+        self.save_p_wave_time_to_csv()
 
     def apply_filter(self):
         try:
@@ -413,8 +451,7 @@ class SeismicPlotter(QMainWindow):
                 "offset": offset,
             }
             self.filter = True
-
-            self.apply_filter_to_selected()
+            self.reload_plot()
 
             QMessageBox.information(
                 self,
@@ -467,7 +504,6 @@ class SeismicPlotter(QMainWindow):
                 tr.trim(starttime=start_time)
 
             self.filtered_traces[group_key] = filtered_st
-            self.plot_traces(selected_group_key=group_key)
 
         except Exception as e:
             QMessageBox.critical(
@@ -499,7 +535,7 @@ class SeismicPlotter(QMainWindow):
                 f"Failed to set STA/LTA trigger parameters.\nError: {str(e)}",
             )
 
-    def calculate_trigger_for_selected(self):
+    def calculate_trigger_for_selected(self, reload=False):
         if not self.trigger:
             print("Trigger is not enabled")
             return
@@ -510,6 +546,11 @@ class SeismicPlotter(QMainWindow):
             return
 
         group_key = current_item.text()
+
+        current_saved_p_wave = self.data_df.loc[group_key, "p_wave_frame"]
+        if current_saved_p_wave and not reload:
+            return
+
         st = (
             self.filtered_traces.get(group_key)
             if self.filter
@@ -555,6 +596,8 @@ class SeismicPlotter(QMainWindow):
             self.p_wave_time = first_trigger_time
             self.p_wave_input.setText(f"{self.p_wave_time:.2f}")
             print(f"P wave time updated to {self.p_wave_time:.2f}")
+            self.save_p_wave_time_to_csv()
+
         elif not any(self.triggers[group_key]):
             print("No triggers found for any trace in this group")
 
