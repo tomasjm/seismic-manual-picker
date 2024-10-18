@@ -52,6 +52,11 @@ class SeismicPlotter(QMainWindow):
 
         # Set up PyQtGraph
         pg.setConfigOptions(antialias=True)
+        self.plot_widget.setBackground("w")
+        self.plot_widget.getAxis("bottom").setPen(pg.mkPen(color=(0, 0, 0), width=1))
+        self.plot_widget.getAxis("left").setPen(pg.mkPen(color=(0, 0, 0), width=1))
+        self.plot_widget.getAxis("bottom").setTextPen(pg.mkPen(color=(0, 0, 0)))
+        self.plot_widget.getAxis("left").setTextPen(pg.mkPen(color=(0, 0, 0)))
 
     def load_data_from_csv(self):
         if os.path.exists(self.data_file):
@@ -328,13 +333,16 @@ class SeismicPlotter(QMainWindow):
 
         # Plot the trace data with increased width
         self.plot_item.plot(
-            x=times, y=tr.data, pen=pg.mkPen(color="b", width=1), name=tr.id
+            x=times, y=tr.data, pen=pg.mkPen(color=(0, 0, 0), width=1), name=tr.id
         )
 
         # Plot P wave marker
         if self.p_wave_time is not None:
             self.marker_line = pg.InfiniteLine(
-                pos=self.p_wave_time, angle=90, pen="r", movable=True
+                pos=self.p_wave_time,
+                angle=90,
+                pen=pg.mkPen(color=(255, 0, 0), width=2.5),
+                movable=True,
             )
             self.plot_item.addItem(self.marker_line)
             self.marker_line.sigPositionChanged.connect(self.update_p_wave_marker)

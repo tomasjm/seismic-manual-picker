@@ -13,5 +13,6 @@ dependencies = [
     "obspy>=1.4.1",
     "pandas>=2.2.3",
     "pyqt5",
+    "pyqtgraph>=0.13.7",
     "pyside6>=6.7.3",
 ]

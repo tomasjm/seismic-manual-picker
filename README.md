@@ -2,6 +2,8 @@
 
 This is a PyQt-based application for tagging and picking seismic traces, managed with the Python `uv` package manager. The app provides an intuitive user interface for interacting with seismic data, allowing users to tag important events and manually pick seismic traces for analysis.
 
+![Image](./img/SCR-20241018-blcp.png)
+
 ## Features
 
 - **Interactive GUI**: Built with PyQt for a clean and responsive interface.
