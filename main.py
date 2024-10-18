@@ -18,8 +18,8 @@ from PyQt5.QtWidgets import (
     QShortcut,
 )
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QKeySequence
-from PyQt5.QtGui import QIcon
+from PyQt5.QtGui import QKeySequence, QIcon
+from PyQt5.QtWidgets import QAction
 import pyqtgraph as pg
 from obspy import read
 from obspy.signal.trigger import classic_sta_lta, trigger_onset
@@ -81,16 +81,24 @@ class SeismicPlotter(QMainWindow):
             QKeySequence(Qt.Key_Down), self, activated=lambda: self.navigate_traces(1)
         )
         QShortcut(QKeySequence(Qt.Key_F), self, activated=self.toggle_filter)
-        QShortcut(QKeySequence(Qt.Key_Escape), self, activated=self.clear_focus)
+        QShortcut(QKeySequence(Qt.Key_Escape), self, activated=self.handle_escape)
         QShortcut(QKeySequence(Qt.Key_R), self, activated=self.reload_plot)
         QShortcut(QKeySequence(Qt.Key_T), self, activated=self.toggle_review_tag)
 
-    def clear_focus(self):
+    def handle_escape(self):
+        # Clear focus from any widget
         focused_widget = QApplication.focusWidget()
         if focused_widget:
             focused_widget.clearFocus()
-        # Deselect the current item in the toolbar
-        self.toolbar.clear()
+
+        # Deselect all toolbar actions
+        for action in self.toolbar.actions():
+            if action.isCheckable():
+                action.setChecked(False)
+
+        # Disable zoom select mode if active
+        if self.zoom_select_mode:
+            self.toggle_zoom_select_mode()
 
     def initUI(self):
         # Central widget
@@ -105,12 +113,30 @@ class SeismicPlotter(QMainWindow):
         central_widget.setLayout(main_layout)
 
         # Toolbar for navigation (zoom, pan, etc.)
-        self.toolbar = QToolBar("Matplotlib Toolbar")
+        self.toolbar = QToolBar("Navigation Toolbar")
         self.addToolBar(self.toolbar)
+
+        # Add reset view action
+        reset_view_action = QAction(QIcon.fromTheme("view-refresh"), "Reset View", self)
+        reset_view_action.triggered.connect(self.reset_view)
+        self.toolbar.addAction(reset_view_action)
+
+        # Add zoom selection action
+        zoom_select_action = QAction(
+            QIcon.fromTheme("zoom-select"), "Zoom Select", self
+        )
+        zoom_select_action.triggered.connect(self.toggle_zoom_select_mode)
+        zoom_select_action.setCheckable(True)
+        self.toolbar.addAction(zoom_select_action)
 
         # PyQtGraph PlotWidget
         self.plot_widget = pg.PlotWidget()
         main_layout.addWidget(self.plot_widget)
+
+        # Set up zoom selection variables
+        self.zoom_select_mode = False
+        self.zoom_start = None
+        self.zoom_rect = None
 
         # Layouts for controls below the plot
         controls_layout = QHBoxLayout()
@@ -127,9 +153,11 @@ class SeismicPlotter(QMainWindow):
         self.plot_item.showGrid(x=True, y=True)
 
         # Initialize zoom state
-        self.zoom_enabled = True
-        self.plot_widget.setMouseEnabled(x=True, y=False)
+        self.zoom_mode = False
+        self.zoom_start = None
+        self.plot_widget.setMouseEnabled(x=False, y=False)  # Disable horizontal drag
         self.plot_widget.setMenuEnabled(False)
+        self.plot_widget.scene().sigMouseClicked.connect(self.on_mouse_click)
 
         # Load Data Button
         load_btn = QPushButton("Load Seismic Data")
@@ -719,6 +747,59 @@ class SeismicPlotter(QMainWindow):
     def update_tag_review_button(self, is_tagged):
         button_text = "Untag from Review" if is_tagged else "Tag for Review"
         self.tag_review_btn.setText(button_text)
+
+    def zoom_in(self):
+        self.plot_widget.getViewBox().scaleBy((0.5, 0.5))
+
+    def zoom_out(self):
+        self.plot_widget.getViewBox().scaleBy((2, 2))
+
+    def reset_view(self):
+        self.plot_widget.getViewBox().autoRange()
+
+    def toggle_zoom_select_mode(self):
+        self.zoom_select_mode = not self.zoom_select_mode
+        if self.zoom_select_mode:
+            self.plot_widget.setCursor(Qt.CrossCursor)
+            self.plot_widget.scene().sigMouseClicked.disconnect(self.on_mouse_click)
+            self.plot_widget.scene().sigMouseClicked.connect(self.on_zoom_select_click)
+            self.plot_widget.scene().sigMouseMoved.connect(self.on_zoom_select_move)
+        else:
+            self.plot_widget.setCursor(Qt.ArrowCursor)
+            self.plot_widget.scene().sigMouseClicked.disconnect(
+                self.on_zoom_select_click
+            )
+            self.plot_widget.scene().sigMouseMoved.disconnect(self.on_zoom_select_move)
+            self.plot_widget.scene().sigMouseClicked.connect(self.on_mouse_click)
+            if self.zoom_rect:
+                self.plot_item.removeItem(self.zoom_rect)
+                self.zoom_rect = None
+
+    def on_zoom_select_click(self, event):
+        if event.button() == Qt.LeftButton:
+            pos = self.plot_item.vb.mapSceneToView(event.scenePos())
+            if self.zoom_start is None:
+                self.zoom_start = pos.x()
+                self.zoom_rect = pg.LinearRegionItem([pos.x(), pos.x()], movable=False)
+                self.plot_item.addItem(self.zoom_rect)
+            else:
+                self.apply_zoom(self.zoom_start, pos.x())
+                self.zoom_start = None
+                self.plot_item.removeItem(self.zoom_rect)
+                self.zoom_rect = None
+
+    def on_zoom_select_move(self, event):
+        if self.zoom_start is not None and self.zoom_rect is not None:
+            pos = self.plot_item.vb.mapSceneToView(event)
+            self.zoom_rect.setRegion([self.zoom_start, pos.x()])
+
+    def on_mouse_click(self, event):
+        # This method is now empty as we're not using it for zoom functionality
+        pass
+
+    def apply_zoom(self, start, end):
+        left, right = min(start, end), max(start, end)
+        self.plot_item.setXRange(left, right, padding=0)
 
 
 def main():
