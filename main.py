@@ -16,6 +16,7 @@ from PyQt5.QtWidgets import (
     QToolBar,
     QComboBox,
     QShortcut,
+    QCheckBox,
 )
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QKeySequence, QIcon
@@ -242,6 +243,20 @@ class SeismicPlotter(QMainWindow):
         self.tag_review_btn.clicked.connect(self.tag_for_review)
         sidebar.addWidget(self.tag_review_btn)
 
+        # Filter options
+        sidebar.addWidget(QLabel("Filter Options:"))
+        self.filter_tagged = QCheckBox("Show only tagged for review")
+        self.filter_no_p = QCheckBox("Show only events without P marker")
+        self.filter_with_p = QCheckBox("Show only P marked events")
+        sidebar.addWidget(self.filter_tagged)
+        sidebar.addWidget(self.filter_no_p)
+        sidebar.addWidget(self.filter_with_p)
+
+        # Connect filter checkboxes
+        self.filter_tagged.stateChanged.connect(self.apply_filters)
+        self.filter_no_p.stateChanged.connect(self.apply_filters)
+        self.filter_with_p.stateChanged.connect(self.apply_filters)
+
         # Spacer
         sidebar.addStretch()
 
@@ -278,11 +293,8 @@ class SeismicPlotter(QMainWindow):
 
             self.save_data_to_csv()
 
-            # Select and plot the first item
-            if self.trace_list.count() > 0:
-                first_item = self.trace_list.item(0)
-                self.trace_list.setCurrentItem(first_item)
-                self.plot_selected_trace(first_item)
+            # Apply filters and update the trace list
+            self.apply_filters()
 
     def load_data(self, group_key):
         files = self.file_groups[group_key]
@@ -762,6 +774,30 @@ class SeismicPlotter(QMainWindow):
     def update_tag_review_button(self, is_tagged):
         button_text = "Untag from Review" if is_tagged else "Tag for Review"
         self.tag_review_btn.setText(button_text)
+
+    def apply_filters(self):
+        self.trace_list.clear()
+        for group_key in self.file_groups.keys():
+            show_item = True
+            if self.filter_tagged.isChecked():
+                show_item = show_item and self.data_df.loc[group_key, "needs_review"]
+            if self.filter_no_p.isChecked():
+                show_item = show_item and pd.isnull(
+                    self.data_df.loc[group_key, "p_wave_frame"]
+                )
+            if self.filter_with_p.isChecked():
+                show_item = show_item and pd.notnull(
+                    self.data_df.loc[group_key, "p_wave_frame"]
+                )
+
+            if show_item:
+                self.trace_list.addItem(QListWidgetItem(group_key))
+
+        # Select and plot the first item if available
+        if self.trace_list.count() > 0:
+            first_item = self.trace_list.item(0)
+            self.trace_list.setCurrentItem(first_item)
+            self.plot_selected_trace(first_item)
 
     def zoom_in(self):
         self.plot_widget.getViewBox().scaleBy((0.5, 0.5))
