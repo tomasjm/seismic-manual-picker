@@ -21,6 +21,7 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QKeySequence, QIcon
 from PyQt5.QtWidgets import QAction
 import pyqtgraph as pg
+from pyqtgraph import LabelItem
 from obspy import read
 from obspy.signal.trigger import classic_sta_lta, trigger_onset
 import numpy as np
@@ -352,11 +353,12 @@ class SeismicPlotter(QMainWindow):
             selected_group_key in self.data_df.index
             and self.data_df.loc[selected_group_key, "needs_review"]
         ):
-            text = pg.TextItem(
-                text="Tagged for Review", color=(255, 0, 0), anchor=(0, 1)
+            label = LabelItem(
+                text="Tagged for Review", color=(255, 0, 0), justify="left"
             )
-            self.plot_item.addItem(text)
-            text.setPos(0, max(tr.data))
+            self.plot_item.addItem(label)
+            label.setParentItem(self.plot_item.getViewBox())
+            label.anchor(itemPos=(0, 0), parentPos=(0.45, 0.065))
 
         self.plot_item.setTitle(
             "Filtered Seismic Traces (Z Channel)"
