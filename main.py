@@ -192,56 +192,15 @@ class SeismicPlotter(QMainWindow):
         p_wave_layout.addWidget(set_p_wave_btn)
         sidebar.addLayout(p_wave_layout)
 
-        # Filter Controls
-        sidebar.addWidget(QLabel("Filter:"))
-        filter_layout = QHBoxLayout()
-
-        self.filter_type_combo = QComboBox()
-        self.filter_type_combo.addItems(["Bandpass", "Highpass", "Lowpass"])
-        filter_layout.addWidget(self.filter_type_combo)
-
-        self.min_freq_input = QLineEdit()
-        self.min_freq_input.setPlaceholderText("Min Freq (Hz)")
-        self.max_freq_input = QLineEdit()
-        self.max_freq_input.setPlaceholderText("Max Freq (Hz)")
-        self.offset_input = QLineEdit()
-        self.offset_input.setPlaceholderText("Offset (s)")
-
-        filter_layout.addWidget(self.min_freq_input)
-        filter_layout.addWidget(self.max_freq_input)
-        filter_layout.addWidget(self.offset_input)
-        sidebar.addLayout(filter_layout)
-
-        apply_filter_btn = QPushButton("Apply Filter")
-        apply_filter_btn.clicked.connect(self.apply_filter)
-        sidebar.addWidget(apply_filter_btn)
+        # Filter Configuration Button
+        open_filter_config_btn = QPushButton("Open Filter Configuration")
+        open_filter_config_btn.clicked.connect(self.open_filter_config)
+        sidebar.addWidget(open_filter_config_btn)
 
         # STA/LTA Trigger Controls
-        sidebar.addWidget(QLabel("STA/LTA Trigger:"))
-        trigger_layout = QHBoxLayout()
-        self.sta_input = QLineEdit()
-        self.sta_input.setPlaceholderText("STA (s)")
-        self.lta_input = QLineEdit()
-        self.lta_input.setPlaceholderText("LTA (s)")
-        self.threshold_input = QLineEdit()
-        self.threshold_input.setPlaceholderText("Threshold")
-        trigger_layout.addWidget(self.sta_input)
-        trigger_layout.addWidget(self.lta_input)
-        trigger_layout.addWidget(self.threshold_input)
-        sidebar.addLayout(trigger_layout)
-        apply_trigger_btn = QPushButton("Set Trigger Parameters")
-        apply_trigger_btn.clicked.connect(self.apply_sta_lta_trigger)
-        sidebar.addWidget(apply_trigger_btn)
-
-        # Export Plot Button
-        export_btn = QPushButton("Export Plot as Image")
-        export_btn.clicked.connect(self.export_plot)
-        sidebar.addWidget(export_btn)
-
-        # Tag for Review Button
-        self.tag_review_btn = QPushButton("Tag for Review")
-        self.tag_review_btn.clicked.connect(self.tag_for_review)
-        sidebar.addWidget(self.tag_review_btn)
+        open_trigger_config_btn = QPushButton("Open Trigger Configuration")
+        open_trigger_config_btn.clicked.connect(self.open_trigger_config)
+        sidebar.addWidget(open_trigger_config_btn)
 
         # Filter options
         sidebar.addWidget(QLabel("Filter Options:"))
@@ -511,57 +470,16 @@ class SeismicPlotter(QMainWindow):
         self.dragging = False
         self.save_p_wave_time_to_csv()
 
-    def apply_filter(self):
-        try:
-            filter_type = self.filter_type_combo.currentText().lower()
-            min_freq = (
-                float(self.min_freq_input.text())
-                if self.min_freq_input.text()
-                else None
-            )
-            max_freq = (
-                float(self.max_freq_input.text())
-                if self.max_freq_input.text()
-                else None
-            )
-            offset = float(self.offset_input.text()) if self.offset_input.text() else 0
+    def apply_filter(self, filter_params):
+        self.filter_params = filter_params
+        self.filter = True
+        self.reload_plot()
 
-            if filter_type == "bandpass" and (min_freq is None or max_freq is None):
-                raise ValueError(
-                    "Both minimum and maximum frequencies are required for bandpass filter"
-                )
-            elif filter_type == "highpass" and min_freq is None:
-                raise ValueError("Minimum frequency is required for highpass filter")
-            elif filter_type == "lowpass" and max_freq is None:
-                raise ValueError("Maximum frequency is required for lowpass filter")
-
-            if filter_type == "bandpass" and min_freq >= max_freq:
-                raise ValueError(
-                    "Minimum frequency must be less than maximum frequency for bandpass filter"
-                )
-
-            # Store filter parameters
-            self.filter_params = {
-                "type": filter_type,
-                "min_freq": min_freq,
-                "max_freq": max_freq,
-                "offset": offset,
-            }
-            self.filter = True
-            self.reload_plot()
-
-            QMessageBox.information(
-                self,
-                "Success",
-                f"{filter_type.capitalize()} filter parameters set successfully",
-            )
-
-        except ValueError as e:
-            QMessageBox.warning(self, "Input Error", str(e))
-        except Exception as e:
-            QMessageBox.critical(
-                self, "Error", f"Failed to set filter parameters.\nError: {str(e)}"
-            )
+        QMessageBox.information(
+            self,
+            "Success",
+            f"{filter_params['type'].capitalize()} filter parameters set successfully",
+        )
 
     def apply_filter_to_selected(self):
         if not self.filter or not self.filter_params:
@@ -607,30 +525,16 @@ class SeismicPlotter(QMainWindow):
                 self, "Error", f"Failed to apply filter.\nError: {str(e)}"
             )
 
-    def apply_sta_lta_trigger(self):
-        try:
-            self.sta = float(self.sta_input.text())
-            self.lta = float(self.lta_input.text())
-            self.threshold = float(self.threshold_input.text())
+    def apply_sta_lta_trigger(self, trigger_params):
+        self.sta = trigger_params["sta"]
+        self.lta = trigger_params["lta"]
+        self.threshold = trigger_params["threshold"]
+        self.trigger = True
+        self.reload_plot()
 
-            if self.sta >= self.lta:
-                raise ValueError("STA must be less than LTA")
-
-            self.trigger = True
-            QMessageBox.information(
-                self, "Success", "STA/LTA trigger parameters set successfully"
-            )
-
-            # Replot after changing trigger settings
-            self.reload_plot()
-        except ValueError as e:
-            QMessageBox.warning(self, "Input Error", str(e))
-        except Exception as e:
-            QMessageBox.critical(
-                self,
-                "Error",
-                f"Failed to set STA/LTA trigger parameters.\nError: {str(e)}",
-            )
+    def open_trigger_config(self):
+        self.trigger_config_window = TriggerConfigWindow(self)
+        self.trigger_config_window.show()
 
     def calculate_trigger_for_selected(self, reload=False):
         if not self.trigger:
@@ -704,27 +608,6 @@ class SeismicPlotter(QMainWindow):
             group_key = current_item.text()
             self.apply_sta_lta_trigger(group_key)
 
-    def export_plot(self):
-        options = QFileDialog.Options()
-        file, _ = QFileDialog.getSaveFileName(
-            self,
-            "Save Plot As Image",
-            "",
-            "PNG Image (*.png);;All Files (*)",
-            options=options,
-        )
-        if file:
-            try:
-                exporter = pg.exporters.ImageExporter(self.plot_widget.plotItem)
-                exporter.export(file)
-                QMessageBox.information(
-                    self, "Success", f"Plot saved successfully at {file}"
-                )
-            except Exception as e:
-                QMessageBox.critical(
-                    self, "Error", f"Failed to save plot.\nError: {str(e)}"
-                )
-
     def toggle_filter(self):
         print("trying to toggle filter")
         self.filter = not self.filter
@@ -770,10 +653,6 @@ class SeismicPlotter(QMainWindow):
 
     def tag_for_review(self):
         self.toggle_review_tag()
-
-    def update_tag_review_button(self, is_tagged):
-        button_text = "Untag from Review" if is_tagged else "Tag for Review"
-        self.tag_review_btn.setText(button_text)
 
     def apply_filters(self):
         self.trace_list.clear()
@@ -851,6 +730,173 @@ class SeismicPlotter(QMainWindow):
     def apply_zoom(self, start, end):
         left, right = min(start, end), max(start, end)
         self.plot_item.setXRange(left, right, padding=0)
+
+    def open_filter_config(self):
+        self.filter_config_window = FilterConfigWindow(self)
+        self.filter_config_window.show()
+
+    def apply_filter_from_config(self, filter_params):
+        self.filter_params = filter_params
+        self.filter = True
+        self.apply_filter_to_selected()
+        self.reload_plot()
+
+
+class FilterConfigWindow(QMainWindow):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.parent = parent
+        self.setWindowTitle("Filter Configuration")
+        self.setGeometry(200, 200, 400, 300)
+
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+
+        layout = QVBoxLayout()
+        central_widget.setLayout(layout)
+
+        # Filter Controls
+        layout.addWidget(QLabel("Filter:"))
+        filter_layout = QHBoxLayout()
+
+        self.filter_type_combo = QComboBox()
+        self.filter_type_combo.addItems(["Bandpass", "Highpass", "Lowpass"])
+        filter_layout.addWidget(self.filter_type_combo)
+
+        self.min_freq_input = QLineEdit()
+        self.min_freq_input.setPlaceholderText("Min Freq (Hz)")
+        self.max_freq_input = QLineEdit()
+        self.max_freq_input.setPlaceholderText("Max Freq (Hz)")
+        self.offset_input = QLineEdit()
+        self.offset_input.setPlaceholderText("Offset (s)")
+
+        filter_layout.addWidget(self.min_freq_input)
+        filter_layout.addWidget(self.max_freq_input)
+        filter_layout.addWidget(self.offset_input)
+        layout.addLayout(filter_layout)
+
+        apply_filter_btn = QPushButton("Apply Filter")
+        apply_filter_btn.clicked.connect(self.apply_filter)
+        layout.addWidget(apply_filter_btn)
+
+    def apply_filter(self):
+        try:
+            filter_type = self.filter_type_combo.currentText().lower()
+            min_freq = (
+                float(self.min_freq_input.text())
+                if self.min_freq_input.text()
+                else None
+            )
+            max_freq = (
+                float(self.max_freq_input.text())
+                if self.max_freq_input.text()
+                else None
+            )
+            offset = float(self.offset_input.text()) if self.offset_input.text() else 0
+
+            if filter_type == "bandpass" and (min_freq is None or max_freq is None):
+                raise ValueError(
+                    "Both minimum and maximum frequencies are required for bandpass filter"
+                )
+            elif filter_type == "highpass" and min_freq is None:
+                raise ValueError("Minimum frequency is required for highpass filter")
+            elif filter_type == "lowpass" and max_freq is None:
+                raise ValueError("Maximum frequency is required for lowpass filter")
+
+            if filter_type == "bandpass" and min_freq >= max_freq:
+                raise ValueError(
+                    "Minimum frequency must be less than maximum frequency for bandpass filter"
+                )
+
+            filter_params = {
+                "type": filter_type,
+                "min_freq": min_freq,
+                "max_freq": max_freq,
+                "offset": offset,
+            }
+
+            if self.parent:
+                self.parent.apply_filter_from_config(filter_params)
+                self.close()
+
+            QMessageBox.information(
+                self,
+                "Success",
+                f"{filter_type.capitalize()} filter parameters set successfully",
+            )
+
+        except ValueError as e:
+            QMessageBox.warning(self, "Input Error", str(e))
+        except Exception as e:
+            QMessageBox.critical(
+                self, "Error", f"Failed to set filter parameters.\nError: {str(e)}"
+            )
+
+
+class TriggerConfigWindow(QMainWindow):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.parent = parent
+        self.setWindowTitle("Trigger Configuration")
+        self.setGeometry(200, 200, 400, 300)
+
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+
+        layout = QVBoxLayout()
+        central_widget.setLayout(layout)
+
+        # STA/LTA Trigger Controls
+        layout.addWidget(QLabel("STA/LTA Trigger:"))
+        trigger_layout = QHBoxLayout()
+
+        self.sta_input = QLineEdit()
+        self.sta_input.setPlaceholderText("STA (s)")
+        self.lta_input = QLineEdit()
+        self.lta_input.setPlaceholderText("LTA (s)")
+        self.threshold_input = QLineEdit()
+        self.threshold_input.setPlaceholderText("Threshold")
+
+        trigger_layout.addWidget(self.sta_input)
+        trigger_layout.addWidget(self.lta_input)
+        trigger_layout.addWidget(self.threshold_input)
+        layout.addLayout(trigger_layout)
+
+        apply_trigger_btn = QPushButton("Apply Trigger")
+        apply_trigger_btn.clicked.connect(self.apply_trigger)
+        layout.addWidget(apply_trigger_btn)
+
+    def apply_trigger(self):
+        try:
+            sta = float(self.sta_input.text())
+            lta = float(self.lta_input.text())
+            threshold = float(self.threshold_input.text())
+
+            if sta >= lta:
+                raise ValueError("STA must be less than LTA")
+
+            trigger_params = {
+                "sta": sta,
+                "lta": lta,
+                "threshold": threshold,
+            }
+
+            if self.parent:
+                self.parent.apply_sta_lta_trigger(trigger_params)
+                self.close()
+
+            QMessageBox.information(
+                self, "Success", "STA/LTA trigger parameters set successfully"
+            )
+
+        except ValueError as e:
+            QMessageBox.warning(self, "Input Error", str(e))
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to set STA/LTA trigger parameters.\nError: {str(e)}",
+            )
 
 
 def main():
