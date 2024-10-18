@@ -49,7 +49,7 @@ class SeismicPlotter(QMainWindow):
         self.initUI()
         self.setupShortcuts()
         self.load_data_from_csv()
-        
+
         # Set up PyQtGraph
         pg.setConfigOptions(antialias=True)
 
@@ -122,8 +122,8 @@ class SeismicPlotter(QMainWindow):
 
         # Set up the plot
         self.plot_item = self.plot_widget.getPlotItem()
-        self.plot_item.setLabel('bottom', 'Time (s)')
-        self.plot_item.setLabel('left', 'Amplitude')
+        self.plot_item.setLabel("bottom", "Time (s)")
+        self.plot_item.setLabel("left", "Amplitude")
         self.plot_item.showGrid(x=True, y=True)
 
         # Load Data Button
@@ -203,15 +203,11 @@ class SeismicPlotter(QMainWindow):
         # Spacer
         sidebar.addStretch()
 
-        # Matplotlib Axes
-        self.ax = self.figure.add_subplot(111)
-        self.marker_line = None  # Matplotlib line for P Wave marker
-        self.dragging = False  # Flag to indicate if marker is being dragged
-
-        # Connect matplotlib events
-        self.canvas.mpl_connect("button_press_event", self.on_click)
-        self.canvas.mpl_connect("motion_notify_event", self.on_drag)
-        self.canvas.mpl_connect("button_release_event", self.on_release)
+        # Set up the plot
+        self.plot_item = self.plot_widget.getPlotItem()
+        self.plot_item.setLabel("bottom", "Time (s)")
+        self.plot_item.setLabel("left", "Amplitude")
+        self.plot_item.showGrid(x=True, y=True)
 
     def save_ref_data(self):
         options = QFileDialog.Options()
@@ -248,9 +244,15 @@ class SeismicPlotter(QMainWindow):
         files = self.file_groups[group_key]
         try:
             st = read(files[0])  # Read the first file
+            print(f"Loaded first file: {files[0]}")
+            print(f"Number of traces: {len(st)}")
+            print(f"First trace data length: {len(st[0].data)}")
             for file in files[1:]:
                 st += read(file)  # Add other components
+                print(f"Added file: {file}")
             self.traces[group_key] = st
+            print(f"Total number of traces for {group_key}: {len(st)}")
+            print(f"Trace IDs: {[tr.id for tr in st]}")
         except Exception as e:
             QMessageBox.critical(
                 self, "Error", f"Failed to load {group_key}.\nError: {str(e)}"
@@ -290,11 +292,15 @@ class SeismicPlotter(QMainWindow):
         tr = st.select(channel="*Z")[0]
 
         times = np.linspace(0, tr.stats.endtime - tr.stats.starttime, num=len(tr.data))
-        self.plot_item.plot(times, tr.data, pen='k', name=tr.id)
+
+        # Plot the trace data
+        self.plot_item.plot(x=times, y=tr.data, pen="b", name=tr.id)
 
         # Plot P wave marker
         if self.p_wave_time is not None:
-            self.marker_line = pg.InfiniteLine(pos=self.p_wave_time, angle=90, pen='r', movable=True)
+            self.marker_line = pg.InfiniteLine(
+                pos=self.p_wave_time, angle=90, pen="r", movable=True
+            )
             self.plot_item.addItem(self.marker_line)
             self.marker_line.sigPositionChanged.connect(self.update_p_wave_marker)
 
@@ -303,15 +309,22 @@ class SeismicPlotter(QMainWindow):
             selected_group_key in self.data_df.index
             and self.data_df.loc[selected_group_key, "needs_review"]
         ):
-            text = pg.TextItem(text="Tagged for Review", color='r', anchor=(0, 1))
+            text = pg.TextItem(
+                text="Tagged for Review", color=(255, 0, 0), anchor=(0, 1)
+            )
             self.plot_item.addItem(text)
-            text.setPos(0, self.plot_item.getViewBox().viewRange()[1][1])
+            text.setPos(0, max(tr.data))
 
         self.plot_item.setTitle(
             "Filtered Seismic Traces (Z Channel)"
             if self.filter
             else "Seismic Traces (Z Channel)"
         )
+
+        # Set labels and ranges
+        self.plot_item.setLabel("left", "Amplitude")
+        self.plot_item.setLabel("bottom", "Time (s)")
+        self.plot_item.enableAutoRange()
 
     def plot_selected_trace(self, item_or_index=None):
         if isinstance(item_or_index, QListWidgetItem):
@@ -368,15 +381,19 @@ class SeismicPlotter(QMainWindow):
                 time = line.value()
             else:
                 time = float(self.p_wave_input.text())
-            
+
             if self.plot_item:
                 if self.marker_line:
                     self.marker_line.setValue(time)
                 else:
-                    self.marker_line = pg.InfiniteLine(pos=time, angle=90, pen='r', movable=True)
+                    self.marker_line = pg.InfiniteLine(
+                        pos=time, angle=90, pen="r", movable=True
+                    )
                     self.plot_item.addItem(self.marker_line)
-                    self.marker_line.sigPositionChanged.connect(self.update_p_wave_marker)
-                
+                    self.marker_line.sigPositionChanged.connect(
+                        self.update_p_wave_marker
+                    )
+
                 self.p_wave_time = time
                 self.p_wave_input.setText(f"{time:.2f}")
                 self.save_p_wave_time_to_csv()
