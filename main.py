@@ -44,7 +44,7 @@ class SeismicPlotter(QMainWindow):
         self.filter_params = None  # Store filter parameters
         self.marker_line = None  # PyQtGraph line for P Wave marker
         self.dragging = False  # Flag to indicate if marker is being dragged
-        self.data_file = "data.csv"
+        self.data_file = None  # Will be set when loading data
         print(self.group_sac_files("test_folder"))
 
         self.initUI()
@@ -60,7 +60,7 @@ class SeismicPlotter(QMainWindow):
         self.plot_widget.getAxis("left").setTextPen(pg.mkPen(color=(0, 0, 0)))
 
     def load_data_from_csv(self):
-        if os.path.exists(self.data_file):
+        if self.data_file and os.path.exists(self.data_file):
             self.data_df = pd.read_csv(self.data_file, index_col="trace_path")
         else:
             self.data_df = pd.DataFrame(
@@ -69,9 +69,12 @@ class SeismicPlotter(QMainWindow):
             self.data_df.set_index("trace_path", inplace=True)
 
     def save_data_to_csv(self):
-        self.data_df.to_csv(self.data_file)
-        print("saving csv")
-        print(self.data_df)
+        if self.data_file:
+            self.data_df.to_csv(self.data_file)
+            print("saving csv")
+            print(self.data_df)
+        else:
+            print("Error: data_file path not set")
 
     def setupShortcuts(self):
         QShortcut(
@@ -256,6 +259,8 @@ class SeismicPlotter(QMainWindow):
             options=options,
         )
         if folder:
+            self.data_file = os.path.join(folder, "data.csv")
+            self.load_data_from_csv()  # Reload data with new file path
             self.file_groups = self.group_sac_files(folder)
             for group_key, files in self.file_groups.items():
                 try:
