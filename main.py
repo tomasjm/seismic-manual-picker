@@ -59,7 +59,9 @@ class SeismicPlotter(QMainWindow):
         if os.path.exists(self.data_file):
             self.data_df = pd.read_csv(self.data_file, index_col="trace_path")
         else:
-            self.data_df = pd.DataFrame(columns=["trace_path", "p_wave_frame"])
+            self.data_df = pd.DataFrame(
+                columns=["trace_path", "p_wave_frame", "needs_review"]
+            )
             self.data_df.set_index("trace_path", inplace=True)
 
     def save_data_to_csv(self):
@@ -83,6 +85,7 @@ class SeismicPlotter(QMainWindow):
         QShortcut(QKeySequence(Qt.Key_F), self, activated=self.toggle_filter)
         QShortcut(QKeySequence(Qt.Key_Escape), self, activated=self.clear_focus)
         QShortcut(QKeySequence(Qt.Key_R), self, activated=self.reload_plot)
+        QShortcut(QKeySequence(Qt.Key_T), self, activated=self.toggle_review_tag)
 
     def clear_focus(self):
         focused_widget = QApplication.focusWidget()
@@ -192,6 +195,11 @@ class SeismicPlotter(QMainWindow):
         export_btn.clicked.connect(self.export_plot)
         sidebar.addWidget(export_btn)
 
+        # Tag for Review Button
+        self.tag_review_btn = QPushButton("Tag for Review")
+        self.tag_review_btn.clicked.connect(self.tag_for_review)
+        sidebar.addWidget(self.tag_review_btn)
+
         # Spacer
         sidebar.addStretch()
 
@@ -219,7 +227,10 @@ class SeismicPlotter(QMainWindow):
                     item = QListWidgetItem(group_key)
                     self.trace_list.addItem(item)
                     if group_key not in self.data_df.index:
-                        self.data_df.loc[group_key] = [None]
+                        self.data_df.loc[group_key] = [
+                            None,
+                            False,
+                        ]  # p_wave_frame, needs_review
                 except Exception as e:
                     QMessageBox.critical(
                         self, "Error", f"Failed to load {group_key}.\nError: {str(e)}"
@@ -288,6 +299,21 @@ class SeismicPlotter(QMainWindow):
                 self.p_wave_time, color="red", linestyle="--", label="P Wave"
             )
 
+        # Indicate if the trace is tagged for review
+        if (
+            selected_group_key in self.data_df.index
+            and self.data_df.loc[selected_group_key, "needs_review"]
+        ):
+            self.ax.text(
+                0.02,
+                0.98,
+                "Tagged for Review",
+                transform=self.ax.transAxes,
+                color="red",
+                fontweight="bold",
+                verticalalignment="top",
+            )
+
         self.ax.set_xlabel("Time (s)")
         self.ax.set_ylabel("Amplitude")
         self.ax.set_title(
@@ -343,6 +369,10 @@ class SeismicPlotter(QMainWindow):
                     wave_offset = int(self.filter_params["offset"])
                 self.p_wave_time = p_wave_frame / tr.stats.sampling_rate - wave_offset
                 self.p_wave_input.setText(f"{self.p_wave_time:.2f}")
+
+            # Update the tag for review button
+            is_tagged = self.data_df.loc[group_key, "needs_review"]
+            self.update_tag_review_button(is_tagged)
 
             selected_trace = group_key
             self.plot_traces(selected_group_key=selected_trace)
@@ -648,6 +678,34 @@ class SeismicPlotter(QMainWindow):
         if current_item:
             self.plot_selected_trace(current_item)
         QMessageBox.information(self, "Reload", "Plot reloaded successfully")
+
+    def toggle_review_tag(self):
+        current_item = self.trace_list.currentItem()
+        if current_item:
+            group_key = current_item.text()
+            current_status = self.data_df.loc[group_key, "needs_review"]
+            new_status = not current_status
+            self.data_df.loc[group_key, "needs_review"] = new_status
+            self.save_data_to_csv()
+            self.update_tag_review_button(new_status)
+            status_text = "tagged for review" if new_status else "untagged from review"
+            QMessageBox.information(
+                self,
+                "Review Status Changed",
+                f"Trace {group_key} has been {status_text}.",
+            )
+            self.reload_plot()
+        else:
+            QMessageBox.warning(
+                self, "No Selection", "Please select a trace to toggle review status."
+            )
+
+    def tag_for_review(self):
+        self.toggle_review_tag()
+
+    def update_tag_review_button(self, is_tagged):
+        button_text = "Untag from Review" if is_tagged else "Tag for Review"
+        self.tag_review_btn.setText(button_text)
 
 
 def main():
