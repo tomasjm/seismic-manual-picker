@@ -126,6 +126,11 @@ class SeismicPlotter(QMainWindow):
         self.plot_item.setLabel("left", "Amplitude")
         self.plot_item.showGrid(x=True, y=True)
 
+        # Initialize zoom state
+        self.zoom_enabled = True
+        self.plot_widget.setMouseEnabled(x=True, y=False)
+        self.plot_widget.setMenuEnabled(False)
+
         # Load Data Button
         load_btn = QPushButton("Load Seismic Data")
         load_btn.clicked.connect(self.save_ref_data)
@@ -293,8 +298,10 @@ class SeismicPlotter(QMainWindow):
 
         times = np.linspace(0, tr.stats.endtime - tr.stats.starttime, num=len(tr.data))
 
-        # Plot the trace data
-        self.plot_item.plot(x=times, y=tr.data, pen="b", name=tr.id)
+        # Plot the trace data with increased width
+        self.plot_item.plot(
+            x=times, y=tr.data, pen=pg.mkPen(color="b", width=1), name=tr.id
+        )
 
         # Plot P wave marker
         if self.p_wave_time is not None:
