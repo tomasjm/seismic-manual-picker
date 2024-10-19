@@ -153,6 +153,11 @@ class SeismicPlotter(QMainWindow):
         toggle_review_tag.triggered.connect(self.toggle_review_tag)
         self.toolbar.addAction(toggle_review_tag)
 
+        # Add button to save current state 
+        save_p_wave_button = QAction("Save trace P wave [SPACE]", self)
+        save_p_wave_button.triggered.connect(self.save_p_wave_time)
+        self.toolbar.addAction(save_p_wave_button)
+
         # PyQtGraph PlotWidget
         self.plot_widget = pg.PlotWidget()
         main_layout.addWidget(self.plot_widget)  # type: ignore
@@ -450,6 +455,7 @@ class SeismicPlotter(QMainWindow):
         if next_index < self.trace_list.count():
             next_item = self.trace_list.item(next_index)
             self.trace_list.setCurrentItem(next_item)
+            self.clear_p_marker()
             self.plot_selected_trace(next_item)
         else:
             QMessageBox.information(self, "End of List", "You've reached the end of the trace list.")
