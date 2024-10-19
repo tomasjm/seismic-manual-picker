@@ -94,6 +94,7 @@ class SeismicPlotter(QMainWindow):
         QShortcut(QKeySequence(Qt.Key_Escape), self, activated=self.handle_escape)
         QShortcut(QKeySequence(Qt.Key_R), self, activated=self.reload_plot)
         QShortcut(QKeySequence(Qt.Key_T), self, activated=self.toggle_review_tag)
+        QShortcut(QKeySequence(Qt.Key_Z), self, activated=self.toggle_zoom_select_mode)
 
     def handle_escape(self):
         # Clear focus from any widget
@@ -134,12 +135,12 @@ class SeismicPlotter(QMainWindow):
         self.toolbar.addAction(reset_view_action)
 
         # Add zoom selection action
-        zoom_select_action = QAction(
+        self.zoom_select_action = QAction(
             QIcon.fromTheme("zoom-select"), "Zoom Select [Z]", self
         )
-        zoom_select_action.triggered.connect(self.toggle_zoom_select_mode)
-        zoom_select_action.setCheckable(True)
-        self.toolbar.addAction(zoom_select_action)
+        self.zoom_select_action.triggered.connect(self.toggle_zoom_select_mode)
+        self.zoom_select_action.setCheckable(True)
+        self.toolbar.addAction(self.zoom_select_action)
 
         # Add button to manually mark P
         mark_manual_p = QAction("Mark P [P]", self)
@@ -172,7 +173,7 @@ class SeismicPlotter(QMainWindow):
         controls_layout.addLayout(list_container, 2)
 
         # Set up the plot
-        self.plot_item: PlotItem = self.plot_widget.getPlotItem()
+        self.plot_item = self.plot_widget.getPlotItem()
         self.plot_item.setLabel("bottom", "Time (s)")
         self.plot_item.setLabel("left", "Amplitude")
         self.plot_item.showGrid(x=True, y=True)
@@ -454,36 +455,6 @@ class SeismicPlotter(QMainWindow):
             self.data_df.loc[group_key, "p_wave_frame"] = p_wave_frame + wave_offset
             self.save_data_to_csv()
 
-    # def on_click(self, event):
-    #     print("clicking")
-    #     if event.inaxes != self.ax:
-    #         return
-    #     if self.marker_line:
-    #         print("clicking marker")
-    #         contains, _ = self.marker_line.contains(event)
-    #         if contains:
-    #             self.dragging = True
-    #
-    # def on_drag(self, event):
-    #     if not self.dragging or not self.marker_line:
-    #         return
-    #     if event.inaxes != self.ax:
-    #         return
-    #     new_time = event.xdata
-    #     # Update marker position with constraints
-    #     if new_time < self.ax.get_xlim()[0]:
-    #         new_time = self.ax.get_xlim()[0]
-    #     elif new_time > self.ax.get_xlim()[1]:
-    #         new_time = self.ax.get_xlim()[1]
-    #     self.marker_line.set_xdata([new_time, new_time])
-    #     self.p_wave_time = new_time
-    #     self.p_wave_input.setText(f"{new_time:.2f}")
-    #     self.canvas.draw()
-    #
-    # def on_release(self, event):
-    #     self.dragging = False
-    #     self.save_p_wave_time_to_csv()
-
     def apply_filter(self, filter_params):
         self.filter_params = filter_params
         self.filter = True
@@ -702,6 +673,7 @@ class SeismicPlotter(QMainWindow):
 
     def toggle_zoom_select_mode(self):
         self.zoom_select_mode = not self.zoom_select_mode
+        self.zoom_select_action.setChecked(self.zoom_select_mode)
         if self.zoom_select_mode:
             self.plot_widget.setCursor(Qt.CrossCursor)
             self.plot_widget.scene().sigMouseClicked.disconnect(self.on_mouse_click)
