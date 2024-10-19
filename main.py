@@ -214,16 +214,16 @@ class SeismicPlotter(QMainWindow):
 
         # Filter options
         sidebar.addWidget(QLabel("Filter Options:"))
-        self.filter_tagged = QCheckBox("Show only tagged for review")
-        self.filter_no_p = QCheckBox("Show only events without P marker")
-        self.filter_with_p = QCheckBox("Show only P marked events")
+        self.filter_tagged = QCheckBox("Filter tagged for review events")
+        self.filter_with_p = QCheckBox("Filter P marked events")
+        self.filter_tagged.setTristate(True)
+        self.filter_with_p.setTristate(True)
         sidebar.addWidget(self.filter_tagged)
-        sidebar.addWidget(self.filter_no_p)
         sidebar.addWidget(self.filter_with_p)
+
 
         # Connect filter checkboxes
         self.filter_tagged.stateChanged.connect(self.apply_filters)
-        self.filter_no_p.stateChanged.connect(self.apply_filters)
         self.filter_with_p.stateChanged.connect(self.apply_filters)
 
         # Spacer
@@ -589,11 +589,13 @@ class SeismicPlotter(QMainWindow):
 
     def navigate_traces(self, direction):
         current_index = self.trace_list.currentRow()
-        new_index = current_index + direction
         self.marker_line = None
         self.p_wave_time = None
+        new_index = current_index + direction
         if 0 <= new_index < self.trace_list.count():
-            self.plot_selected_trace(new_index)
+            item = self.trace_list.item(new_index)
+            self.trace_list.setCurrentItem(item)
+            self.plot_selected_trace(item)
 
     def reload_plot(self):
         current_item = self.trace_list.currentItem()
@@ -625,19 +627,24 @@ class SeismicPlotter(QMainWindow):
         self.toggle_review_tag()
 
     def apply_filters(self):
+        self.marker_line = None
+        self.p_wave_time = None
         self.trace_list.clear()
         for group_key in self.file_groups.keys():
             show_item = True
-            if self.filter_tagged.isChecked():
+            
+            tagged_state = self.filter_tagged.checkState()
+            p_wave_state = self.filter_with_p.checkState()
+            
+            if tagged_state == Qt.Checked:
                 show_item = show_item and self.data_df.loc[group_key, "needs_review"]
-            if self.filter_no_p.isChecked():
-                show_item = show_item and pd.isnull(
-                    self.data_df.loc[group_key, "p_wave_frame"]
-                )
-            if self.filter_with_p.isChecked():
-                show_item = show_item and pd.notnull(
-                    self.data_df.loc[group_key, "p_wave_frame"]
-                )
+            elif tagged_state == Qt.PartiallyChecked:
+                show_item = show_item and not self.data_df.loc[group_key, "needs_review"]
+            
+            if p_wave_state == Qt.Checked:
+                show_item = show_item and pd.notnull(self.data_df.loc[group_key, "p_wave_frame"])
+            elif p_wave_state == Qt.PartiallyChecked:
+                show_item = show_item and pd.isnull(self.data_df.loc[group_key, "p_wave_frame"])
 
             if show_item:
                 self.trace_list.addItem(QListWidgetItem(group_key))
