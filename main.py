@@ -364,40 +364,37 @@ class SeismicPlotter(QMainWindow):
 
         if item is None:
             return  # No item selected
-
         group_key = item.text()
-        self.trace_list.setCurrentItem(item)
 
         # Check if the trace is already loaded
         index = self.trace_list.row(item)
-        if index >= len(self.traces):
-            # Load the data if it hasn't been loaded yet
+        print(f"Selected {group_key}")
+        if group_key not in self.traces:
             self.load_data(group_key)
+        print(self.traces[group_key])
+        # Apply filter if parameters are set
+        if self.filter and self.filter_params:
+            self.apply_filter_to_selected()
 
-        if 0 <= index < len(self.traces):
-            # Apply filter if parameters are set
-            if self.filter and self.filter_params:
-                self.apply_filter_to_selected()
+        # Calculate trigger and update P wave marker
+        if self.trigger:
+            self.calculate_trigger_for_selected()
 
-            # Calculate trigger and update P wave marker
-            if self.trigger:
-                self.calculate_trigger_for_selected()
+        # Load P-wave arrival time from CSV
+        if group_key in self.data_df.index and pd.notnull(
+            self.data_df.loc[group_key, "p_wave_frame"]
+        ):
+            p_wave_frame = self.data_df.loc[group_key, "p_wave_frame"]
+            st = self.traces[group_key]
+            tr = st.select(channel="*Z")[0]
+            wave_offset = 0
+            if self.filter:
+                wave_offset = int(self.filter_params["offset"])
+            self.p_wave_time = p_wave_frame / tr.stats.sampling_rate - wave_offset
+            self.p_wave_label.setText(f"P Wave Time: {self.p_wave_time:.2f} s")
 
-            # Load P-wave arrival time from CSV
-            if group_key in self.data_df.index and pd.notnull(
-                self.data_df.loc[group_key, "p_wave_frame"]
-            ):
-                p_wave_frame = self.data_df.loc[group_key, "p_wave_frame"]
-                st = self.traces[group_key]
-                tr = st.select(channel="*Z")[0]
-                wave_offset = 0
-                if self.filter:
-                    wave_offset = int(self.filter_params["offset"])
-                self.p_wave_time = p_wave_frame / tr.stats.sampling_rate - wave_offset
-                self.p_wave_label.setText(f"P Wave Time: {self.p_wave_time:.2f} s")
-
-            selected_trace = group_key
-            self.plot_traces(selected_group_key=selected_trace)
+        selected_trace = group_key
+        self.plot_traces(selected_group_key=selected_trace)
 
     def update_p_wave_marker(self, line):
         time = line.value()
@@ -619,7 +616,6 @@ class SeismicPlotter(QMainWindow):
         current_index = self.trace_list.currentRow()
         new_index = current_index + direction
         if 0 <= new_index < self.trace_list.count():
-            self.clear_p_marker()
             item = self.trace_list.item(new_index)
             self.trace_list.setCurrentItem(item)
             self.plot_selected_trace(item)
@@ -644,7 +640,7 @@ class SeismicPlotter(QMainWindow):
                 "Review Status Changed",
                 f"Trace {group_key} has been {status_text}.",
             )
-            self.reload_plot()
+            self.apply_filters()
         else:
             QMessageBox.warning(
                 self, "No Selection", "Please select a trace to toggle review status."
