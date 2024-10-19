@@ -16,10 +16,10 @@ from PyQt5.QtWidgets import (
     QToolBar,
     QComboBox,
     QShortcut,
-    QCheckBox,
+    QCheckBox
 )
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QKeySequence, QIcon
+from PyQt5.QtGui import QKeySequence, QIcon, QCursor
 from PyQt5.QtWidgets import QAction
 import pyqtgraph as pg
 from pyqtgraph import LabelItem
@@ -46,7 +46,6 @@ class SeismicPlotter(QMainWindow):
         self.marker_line = None  # PyQtGraph line for P Wave marker
         self.dragging = False  # Flag to indicate if marker is being dragged
         self.data_file = None  # Will be set when loading data
-        print(self.group_sac_files("test_folder"))
 
         self.initUI()
         self.setupShortcuts()
@@ -95,6 +94,7 @@ class SeismicPlotter(QMainWindow):
         QShortcut(QKeySequence(Qt.Key_R), self, activated=self.reload_plot)
         QShortcut(QKeySequence(Qt.Key_T), self, activated=self.toggle_review_tag)
         QShortcut(QKeySequence(Qt.Key_Z), self, activated=self.toggle_zoom_select_mode)
+        QShortcut(QKeySequence(Qt.Key_P), self, activated=self.manually_mark_p)
 
     def handle_escape(self):
         # Clear focus from any widget
@@ -143,10 +143,9 @@ class SeismicPlotter(QMainWindow):
         self.toolbar.addAction(self.zoom_select_action)
 
         # Add button to manually mark P
-        mark_manual_p = QAction("Mark P [P]", self)
-        mark_manual_p.triggered.connect(self.manually_mark_p)
-        mark_manual_p.setCheckable(True)
-        self.toolbar.addAction(mark_manual_p)
+        self.mark_manual_p = QAction("Mark P [P]", self)
+        self.mark_manual_p.triggered.connect(self.manually_mark_p)
+        self.toolbar.addAction(self.mark_manual_p)
 
         # Add button to toggle review tag for current plot
         toggle_review_tag = QAction("Toggle tag for review [T]", self)
@@ -199,13 +198,8 @@ class SeismicPlotter(QMainWindow):
         # P Wave Marker Controls
         sidebar.addWidget(QLabel("P Wave Marker:"))
         p_wave_layout = QHBoxLayout()
-        self.p_wave_input = QLineEdit()
-        self.p_wave_input.setPlaceholderText("Enter P Wave Time (s)")
-        self.p_wave_input.returnPressed.connect(self.update_p_wave_marker)
-        p_wave_layout.addWidget(self.p_wave_input)
-        set_p_wave_btn = QPushButton("Set")
-        set_p_wave_btn.clicked.connect(self.update_p_wave_marker)
-        p_wave_layout.addWidget(set_p_wave_btn)
+        self.p_wave_label = QLabel("Use 'P' key or toolbar button to mark P wave")
+        p_wave_layout.addWidget(self.p_wave_label)
         sidebar.addLayout(p_wave_layout)
 
         # Filter Configuration Button
@@ -311,10 +305,6 @@ class SeismicPlotter(QMainWindow):
         if selected_group_key is None:
             raise Exception("Selected group key trace cannot be none")
 
-        # Calculate trigger if necessary
-        if self.trigger:
-            self.calculate_trigger_for_selected()
-
         if self.filter and selected_group_key in self.filtered_traces:
             st = self.filtered_traces[selected_group_key]
         else:
@@ -403,43 +393,37 @@ class SeismicPlotter(QMainWindow):
                 if self.filter:
                     wave_offset = int(self.filter_params["offset"])
                 self.p_wave_time = p_wave_frame / tr.stats.sampling_rate - wave_offset
-                self.p_wave_input.setText(f"{self.p_wave_time:.2f}")
+                self.p_wave_label.setText(f"P Wave Time: {self.p_wave_time:.2f} s")
 
             selected_trace = group_key
             self.plot_traces(selected_group_key=selected_trace)
 
-    def update_p_wave_marker(self, line=None):
-        try:
-            if line:
-                time = line.value()
-            else:
-                time = float(self.p_wave_input.text())
-
-            if self.plot_item:
-                if self.marker_line:
-                    self.marker_line.setValue(time)
-                else:
-                    self.marker_line = pg.InfiniteLine(
-                        pos=time, angle=90, pen="r", movable=True
-                    )
-                    self.plot_item.addItem(self.marker_line)
-                    self.marker_line.sigPositionChanged.connect(
-                        self.update_p_wave_marker
-                    )
-
-                self.p_wave_time = time
-                self.p_wave_input.setText(f"{time:.2f}")
-                self.save_p_wave_time_to_csv()
-
-        except ValueError:
-            QMessageBox.warning(
-                self,
-                "Input Error",
-                "Please enter a valid numerical value for P Wave time.",
-            )
+    def update_p_wave_marker(self, line):
+        time = line.value()
+        if self.plot_item:
+            self.p_wave_time = time
+            self.save_p_wave_time_to_csv()
+            self.p_wave_label.setText(f"P Wave Time: {time:.2f} s")
 
     def manually_mark_p(self):
-        return
+        if self.plot_item:
+            mouse_point = self.plot_widget.mapFromGlobal(QCursor.pos())
+            mouse_point_f = self.plot_item.vb.mapSceneToView(mouse_point)
+            time = mouse_point_f.x()
+
+            if self.marker_line:
+                self.marker_line.setValue(time)
+            else:
+                self.marker_line = pg.InfiniteLine(
+                    pos=time, angle=90, pen=pg.mkPen(color=(255, 0, 0), width=2.5), movable=True
+                )
+                self.plot_item.addItem(self.marker_line)
+                self.marker_line.sigPositionChanged.connect(self.update_p_wave_marker)
+
+            self.p_wave_time = time
+            self.p_wave_label.setText(f"P Wave Time: {self.p_wave_time:.2f} s")
+            self.save_p_wave_time_to_csv()
+            self.reload_plot()
 
     def save_p_wave_time_to_csv(self):
         current_item = self.trace_list.currentItem()
@@ -580,7 +564,7 @@ class SeismicPlotter(QMainWindow):
 
         if first_trigger_time is not None:
             self.p_wave_time = first_trigger_time
-            self.p_wave_input.setText(f"{self.p_wave_time:.2f}")
+            self.p_wave_label.setText(f"P Wave Time: {self.p_wave_time:.2f} s")
             print(f"P wave time updated to {self.p_wave_time:.2f}")
             self.save_p_wave_time_to_csv()
 
@@ -606,6 +590,8 @@ class SeismicPlotter(QMainWindow):
     def navigate_traces(self, direction):
         current_index = self.trace_list.currentRow()
         new_index = current_index + direction
+        self.marker_line = None
+        self.p_wave_time = None
         if 0 <= new_index < self.trace_list.count():
             self.plot_selected_trace(new_index)
 
