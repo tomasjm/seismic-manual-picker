@@ -127,21 +127,34 @@ class SeismicPlotter(QMainWindow):
         self.addToolBar(self.toolbar)
 
         # Add reset view action
-        reset_view_action = QAction(QIcon.fromTheme("view-refresh"), "Reset View", self)
+        reset_view_action = QAction(
+            QIcon.fromTheme("view-refresh"), "Reset View [R]", self
+        )
         reset_view_action.triggered.connect(self.reset_view)
         self.toolbar.addAction(reset_view_action)
 
         # Add zoom selection action
         zoom_select_action = QAction(
-            QIcon.fromTheme("zoom-select"), "Zoom Select", self
+            QIcon.fromTheme("zoom-select"), "Zoom Select [Z]", self
         )
         zoom_select_action.triggered.connect(self.toggle_zoom_select_mode)
         zoom_select_action.setCheckable(True)
         self.toolbar.addAction(zoom_select_action)
 
+        # Add button to manually mark P
+        mark_manual_p = QAction("Mark P [P]", self)
+        mark_manual_p.triggered.connect(self.manually_mark_p)
+        mark_manual_p.setCheckable(True)
+        self.toolbar.addAction(mark_manual_p)
+
+        # Add button to toggle review tag for current plot
+        toggle_review_tag = QAction("Toggle tag for review [T]", self)
+        toggle_review_tag.triggered.connect(self.toggle_review_tag)
+        self.toolbar.addAction(toggle_review_tag)
+
         # PyQtGraph PlotWidget
         self.plot_widget = pg.PlotWidget()
-        main_layout.addWidget(self.plot_widget)
+        main_layout.addWidget(self.plot_widget)  # type: ignore
 
         # Set up zoom selection variables
         self.zoom_select_mode = False
@@ -154,10 +167,12 @@ class SeismicPlotter(QMainWindow):
 
         # Sidebar for controls
         sidebar = QVBoxLayout()
-        controls_layout.addLayout(sidebar, 2)
+        list_container = QVBoxLayout()
+        controls_layout.addLayout(sidebar, 1)
+        controls_layout.addLayout(list_container, 2)
 
         # Set up the plot
-        self.plot_item = self.plot_widget.getPlotItem()
+        self.plot_item: PlotItem = self.plot_widget.getPlotItem()
         self.plot_item.setLabel("bottom", "Time (s)")
         self.plot_item.setLabel("left", "Amplitude")
         self.plot_item.showGrid(x=True, y=True)
@@ -172,13 +187,13 @@ class SeismicPlotter(QMainWindow):
         # Load Data Button
         load_btn = QPushButton("Load Seismic Data")
         load_btn.clicked.connect(self.save_ref_data)
-        sidebar.addWidget(load_btn)
+        list_container.addWidget(load_btn)
 
         # List of loaded traces
-        sidebar.addWidget(QLabel("Loaded Traces:"))
+        list_container.addWidget(QLabel("Loaded Traces:"))
         self.trace_list = QListWidget()
         self.trace_list.itemClicked.connect(self.plot_selected_trace)
-        sidebar.addWidget(self.trace_list)
+        list_container.addWidget(self.trace_list)
 
         # P Wave Marker Controls
         sidebar.addWidget(QLabel("P Wave Marker:"))
@@ -389,10 +404,6 @@ class SeismicPlotter(QMainWindow):
                 self.p_wave_time = p_wave_frame / tr.stats.sampling_rate - wave_offset
                 self.p_wave_input.setText(f"{self.p_wave_time:.2f}")
 
-            # Update the tag for review button
-            is_tagged = self.data_df.loc[group_key, "needs_review"]
-            self.update_tag_review_button(is_tagged)
-
             selected_trace = group_key
             self.plot_traces(selected_group_key=selected_trace)
 
@@ -426,6 +437,9 @@ class SeismicPlotter(QMainWindow):
                 "Please enter a valid numerical value for P Wave time.",
             )
 
+    def manually_mark_p(self):
+        return
+
     def save_p_wave_time_to_csv(self):
         current_item = self.trace_list.currentItem()
         if current_item:
@@ -440,35 +454,35 @@ class SeismicPlotter(QMainWindow):
             self.data_df.loc[group_key, "p_wave_frame"] = p_wave_frame + wave_offset
             self.save_data_to_csv()
 
-    def on_click(self, event):
-        print("clicking")
-        if event.inaxes != self.ax:
-            return
-        if self.marker_line:
-            print("clicking marker")
-            contains, _ = self.marker_line.contains(event)
-            if contains:
-                self.dragging = True
-
-    def on_drag(self, event):
-        if not self.dragging or not self.marker_line:
-            return
-        if event.inaxes != self.ax:
-            return
-        new_time = event.xdata
-        # Update marker position with constraints
-        if new_time < self.ax.get_xlim()[0]:
-            new_time = self.ax.get_xlim()[0]
-        elif new_time > self.ax.get_xlim()[1]:
-            new_time = self.ax.get_xlim()[1]
-        self.marker_line.set_xdata([new_time, new_time])
-        self.p_wave_time = new_time
-        self.p_wave_input.setText(f"{new_time:.2f}")
-        self.canvas.draw()
-
-    def on_release(self, event):
-        self.dragging = False
-        self.save_p_wave_time_to_csv()
+    # def on_click(self, event):
+    #     print("clicking")
+    #     if event.inaxes != self.ax:
+    #         return
+    #     if self.marker_line:
+    #         print("clicking marker")
+    #         contains, _ = self.marker_line.contains(event)
+    #         if contains:
+    #             self.dragging = True
+    #
+    # def on_drag(self, event):
+    #     if not self.dragging or not self.marker_line:
+    #         return
+    #     if event.inaxes != self.ax:
+    #         return
+    #     new_time = event.xdata
+    #     # Update marker position with constraints
+    #     if new_time < self.ax.get_xlim()[0]:
+    #         new_time = self.ax.get_xlim()[0]
+    #     elif new_time > self.ax.get_xlim()[1]:
+    #         new_time = self.ax.get_xlim()[1]
+    #     self.marker_line.set_xdata([new_time, new_time])
+    #     self.p_wave_time = new_time
+    #     self.p_wave_input.setText(f"{new_time:.2f}")
+    #     self.canvas.draw()
+    #
+    # def on_release(self, event):
+    #     self.dragging = False
+    #     self.save_p_wave_time_to_csv()
 
     def apply_filter(self, filter_params):
         self.filter_params = filter_params
@@ -638,7 +652,6 @@ class SeismicPlotter(QMainWindow):
             new_status = not current_status
             self.data_df.loc[group_key, "needs_review"] = new_status
             self.save_data_to_csv()
-            self.update_tag_review_button(new_status)
             status_text = "tagged for review" if new_status else "untagged from review"
             QMessageBox.information(
                 self,
