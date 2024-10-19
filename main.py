@@ -442,8 +442,21 @@ class SeismicPlotter(QMainWindow):
     def save_p_wave_time(self):
         if self.p_wave_time is not None:
             self.save_p_wave_time_to_csv()
+            self.navigate_to_next_trace()
+            self.apply_filters()
         else:
             QMessageBox.warning(self, "Warning", "No P-wave time to save. Please mark a P-wave first.")
+
+    def navigate_to_next_trace(self):
+        current_index = self.trace_list.currentRow()
+        next_index = current_index + 1
+        if next_index < self.trace_list.count():
+            next_item = self.trace_list.item(next_index)
+            self.trace_list.setCurrentItem(next_item)
+            self.plot_selected_trace(next_item)
+        else:
+            QMessageBox.information(self, "End of List", "You've reached the end of the trace list.")
+            self.clear_plot()
 
     def apply_filter(self, filter_params):
         self.filter_params = filter_params
@@ -597,10 +610,16 @@ class SeismicPlotter(QMainWindow):
         self.p_wave_time = None
         self.p_wave_label.setText("Use 'P' key or toolbar button to mark P wave")
 
+    def clear_plot(self):
+        self.plot_item.clear()
+        self.clear_p_marker()
+        self.p_wave_label.setText("Plot cleared")
+
     def navigate_traces(self, direction):
         current_index = self.trace_list.currentRow()
         new_index = current_index + direction
         if 0 <= new_index < self.trace_list.count():
+            self.clear_p_marker()
             item = self.trace_list.item(new_index)
             self.trace_list.setCurrentItem(item)
             self.plot_selected_trace(item)
@@ -636,6 +655,11 @@ class SeismicPlotter(QMainWindow):
 
     def apply_filters(self):
         self.clear_p_marker()
+        
+        # Store the currently selected item
+        current_item = self.trace_list.currentItem()
+        current_group_key = current_item.text() if current_item else None
+        
         self.trace_list.clear()
         for group_key in self.file_groups.keys():
             show_item = True
@@ -656,11 +680,24 @@ class SeismicPlotter(QMainWindow):
             if show_item:
                 self.trace_list.addItem(QListWidgetItem(group_key))
 
-        # Select and plot the first item if available
+        # Try to select the previously selected item, or select the first item if not found
         if self.trace_list.count() > 0:
-            first_item = self.trace_list.item(0)
-            self.trace_list.setCurrentItem(first_item)
-            self.plot_selected_trace(first_item)
+            if current_group_key:
+                items = self.trace_list.findItems(current_group_key, Qt.MatchExactly)
+                if items:
+                    self.trace_list.setCurrentItem(items[0])
+                    self.plot_selected_trace(items[0])
+                else:
+                    first_item = self.trace_list.item(0)
+                    self.trace_list.setCurrentItem(first_item)
+                    self.plot_selected_trace(first_item)
+            else:
+                first_item = self.trace_list.item(0)
+                self.trace_list.setCurrentItem(first_item)
+                self.plot_selected_trace(first_item)
+        else:
+            self.clear_plot()
+            
 
     def zoom_in(self):
         self.plot_widget.getViewBox().scaleBy((0.5, 0.5))
