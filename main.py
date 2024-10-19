@@ -95,6 +95,7 @@ class SeismicPlotter(QMainWindow):
         QShortcut(QKeySequence(Qt.Key_T), self, activated=self.toggle_review_tag)
         QShortcut(QKeySequence(Qt.Key_Z), self, activated=self.toggle_zoom_select_mode)
         QShortcut(QKeySequence(Qt.Key_P), self, activated=self.manually_mark_p)
+        QShortcut(QKeySequence(Qt.Key_Space), self, activated=self.save_p_wave_time)
 
     def handle_escape(self):
         # Clear focus from any widget
@@ -402,7 +403,6 @@ class SeismicPlotter(QMainWindow):
         time = line.value()
         if self.plot_item:
             self.p_wave_time = time
-            self.save_p_wave_time_to_csv()
             self.p_wave_label.setText(f"P Wave Time: {time:.2f} s")
 
     def manually_mark_p(self):
@@ -422,7 +422,6 @@ class SeismicPlotter(QMainWindow):
 
             self.p_wave_time = time
             self.p_wave_label.setText(f"P Wave Time: {self.p_wave_time:.2f} s")
-            self.save_p_wave_time_to_csv()
             self.reload_plot()
 
     def save_p_wave_time_to_csv(self):
@@ -438,6 +437,13 @@ class SeismicPlotter(QMainWindow):
                 wave_offset = int(self.filter_params["offset"] * tr.stats.sampling_rate)
             self.data_df.loc[group_key, "p_wave_frame"] = p_wave_frame + wave_offset
             self.save_data_to_csv()
+            QMessageBox.information(self, "Success", f"P-wave time for {group_key} saved successfully.")
+
+    def save_p_wave_time(self):
+        if self.p_wave_time is not None:
+            self.save_p_wave_time_to_csv()
+        else:
+            QMessageBox.warning(self, "Warning", "No P-wave time to save. Please mark a P-wave first.")
 
     def apply_filter(self, filter_params):
         self.filter_params = filter_params
@@ -566,7 +572,6 @@ class SeismicPlotter(QMainWindow):
             self.p_wave_time = first_trigger_time
             self.p_wave_label.setText(f"P Wave Time: {self.p_wave_time:.2f} s")
             print(f"P wave time updated to {self.p_wave_time:.2f}")
-            self.save_p_wave_time_to_csv()
 
         elif not any(self.triggers[group_key]):
             print("No triggers found for any trace in this group")
@@ -587,10 +592,13 @@ class SeismicPlotter(QMainWindow):
             self, "Filter Toggle", f"Filter is now {'on' if self.filter else 'off'}"
         )
 
-    def navigate_traces(self, direction):
-        current_index = self.trace_list.currentRow()
+    def clear_p_marker(self):
         self.marker_line = None
         self.p_wave_time = None
+        self.p_wave_label.setText("Use 'P' key or toolbar button to mark P wave")
+
+    def navigate_traces(self, direction):
+        current_index = self.trace_list.currentRow()
         new_index = current_index + direction
         if 0 <= new_index < self.trace_list.count():
             item = self.trace_list.item(new_index)
@@ -627,8 +635,7 @@ class SeismicPlotter(QMainWindow):
         self.toggle_review_tag()
 
     def apply_filters(self):
-        self.marker_line = None
-        self.p_wave_time = None
+        self.clear_p_marker()
         self.trace_list.clear()
         for group_key in self.file_groups.keys():
             show_item = True
