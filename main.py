@@ -386,7 +386,7 @@ class SeismicPlotter(QMainWindow):
             self.calculate_trigger_for_selected()
 
         # Load P-wave arrival time from CSV
-        if group_key in self.data_df.index and pd.notnull(
+        if group_key in self.data_df.index and pd.notna(
             self.data_df.loc[group_key, "p_wave_frame"]
         ):
             p_wave_frame = self.data_df.loc[group_key, "p_wave_frame"]
@@ -539,9 +539,6 @@ class SeismicPlotter(QMainWindow):
 
         group_key = current_item.text()
 
-        current_saved_p_wave = self.data_df.loc[group_key, "p_wave_frame"]
-        if current_saved_p_wave and not reload:
-            return
 
         st = (
             self.filtered_traces.get(group_key)
