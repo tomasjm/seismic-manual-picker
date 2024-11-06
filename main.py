@@ -17,6 +17,7 @@ from PyQt5.QtWidgets import (
     QComboBox,
     QShortcut,
     QCheckBox
+    
 )
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QKeySequence, QIcon, QCursor
@@ -99,6 +100,7 @@ class SeismicPlotter(QMainWindow):
         QShortcut(QKeySequence(Qt.Key_P), self, activated=self.manually_mark_p)
         QShortcut(QKeySequence(Qt.Key_Space), self, activated=self.save_p_wave_time)
         QShortcut(QKeySequence(Qt.Key_S), self, activated=self.toggle_show_spectrogram)
+        QShortcut(QKeySequence(Qt.Key_D), self, activated=self.toggle_deleted_trace)
 
 
     def handle_escape(self):
@@ -157,6 +159,11 @@ class SeismicPlotter(QMainWindow):
         toggle_review_tag.triggered.connect(self.toggle_review_tag)
         self.toolbar.addAction(toggle_review_tag)
 
+        # Add button to toggle review tag for current plot
+        remove_trace_button = QAction("Remove trace [D]", self)
+        remove_trace_button.triggered.connect(self.toggle_deleted_trace)
+        self.toolbar.addAction(remove_trace_button)
+
         # Add button to save current state 
         save_p_wave_button = QAction("Save trace P wave [SPACE]", self)
         save_p_wave_button.triggered.connect(self.save_p_wave_time)
@@ -208,7 +215,8 @@ class SeismicPlotter(QMainWindow):
         list_container.addWidget(load_btn)
 
         # List of loaded traces
-        list_container.addWidget(QLabel("Loaded Traces:"))
+        self.traces_label = QLabel("Loaded Traces:")
+        list_container.addWidget(self.traces_label)
         self.trace_list = QListWidget()
         self.trace_list.itemClicked.connect(self.plot_selected_trace)
         list_container.addWidget(self.trace_list)
@@ -678,6 +686,23 @@ class SeismicPlotter(QMainWindow):
                 self, "No Selection", "Please select a trace to toggle review status."
             )
 
+    def toggle_deleted_trace(self):
+        current_item = self.trace_list.currentItem()
+
+        if current_item:
+            ret = QMessageBox.question(self,'', f"Are you sure to mark as removed trace: {current_item.text()}?", QMessageBox.Yes | QMessageBox.No)
+            if ret == QMessageBox.No:
+                return
+            group_key = current_item.text()
+            self.data_df.loc[group_key, "deleted"] = True 
+            self.save_data_to_csv()
+            self.navigate_to_next_trace()
+        else:
+            QMessageBox.warning(
+                self, "No Selection", "Please select a trace to toggle review status."
+            )
+
+
     def tag_for_review(self):
         self.toggle_review_tag()
 
@@ -689,6 +714,7 @@ class SeismicPlotter(QMainWindow):
         current_group_key = current_item.text() if current_item else None
         
         self.trace_list.clear()
+        total_traces = len(self.file_groups)
         for group_key in self.file_groups.keys():
             show_item = True
             
@@ -704,6 +730,9 @@ class SeismicPlotter(QMainWindow):
                 show_item = show_item and pd.notnull(self.data_df.loc[group_key, "p_wave_frame"])
             elif p_wave_state == Qt.PartiallyChecked:
                 show_item = show_item and pd.isnull(self.data_df.loc[group_key, "p_wave_frame"])
+
+            deleted = self.data_df.loc[group_key, "deleted"]
+            show_item = show_item and (pd.isna(deleted) or not deleted) 
 
             if show_item:
                 self.trace_list.addItem(QListWidgetItem(group_key))
@@ -725,8 +754,11 @@ class SeismicPlotter(QMainWindow):
                 self.plot_selected_trace(first_item)
         else:
             self.clear_plot()
-            
-
+                
+        # Update the traces label with the count
+        visible_traces = self.trace_list.count()
+        self.traces_label.setText(f"Loaded Traces: {visible_traces}/{total_traces}")
+        
     def zoom_in(self):
         self.plot_widget.getViewBox().scaleBy((0.5, 0.5))
 
