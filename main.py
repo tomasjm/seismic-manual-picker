@@ -27,6 +27,7 @@ from obspy import read
 from obspy.signal.trigger import classic_sta_lta, trigger_onset
 import numpy as np
 import pandas as pd
+from matplotlib import mlab
 
 
 class SeismicPlotter(QMainWindow):
@@ -46,6 +47,7 @@ class SeismicPlotter(QMainWindow):
         self.marker_line = None  # PyQtGraph line for P Wave marker
         self.dragging = False  # Flag to indicate if marker is being dragged
         self.data_file = None  # Will be set when loading data
+        self.show_spectrogram = False
 
         self.initUI()
         self.setupShortcuts()
@@ -96,6 +98,8 @@ class SeismicPlotter(QMainWindow):
         QShortcut(QKeySequence(Qt.Key_Z), self, activated=self.toggle_zoom_select_mode)
         QShortcut(QKeySequence(Qt.Key_P), self, activated=self.manually_mark_p)
         QShortcut(QKeySequence(Qt.Key_Space), self, activated=self.save_p_wave_time)
+        QShortcut(QKeySequence(Qt.Key_S), self, activated=self.toggle_show_spectrogram)
+
 
     def handle_escape(self):
         # Clear focus from any widget
@@ -157,6 +161,14 @@ class SeismicPlotter(QMainWindow):
         save_p_wave_button = QAction("Save trace P wave [SPACE]", self)
         save_p_wave_button.triggered.connect(self.save_p_wave_time)
         self.toolbar.addAction(save_p_wave_button)
+
+        # Add show spectrogram selection 
+        self.show_spectrogram_action = QAction(
+            QIcon.fromTheme("show-spectrogram"), "Show Spectrogram [S]", self
+        )
+        self.show_spectrogram_action.triggered.connect(self.toggle_show_spectrogram)
+        self.show_spectrogram_action.setCheckable(True)
+        self.toolbar.addAction(self.show_spectrogram_action)
 
         # PyQtGraph PlotWidget
         self.plot_widget = pg.PlotWidget()
@@ -318,12 +330,29 @@ class SeismicPlotter(QMainWindow):
 
         tr = st.select(channel="*Z")[0]
 
-        times = np.linspace(0, tr.stats.endtime - tr.stats.starttime, num=len(tr.data))
+        if self.show_spectrogram:
+            Sxx, freqs, times = mlab.specgram(tr.data - tr.data.mean(), Fs=tr.stats.sampling_rate, NFFT=128,pad_to=8*128, noverlap=int(128 * 0.9))
+            Sxx = np.sqrt(Sxx[1:, :])
+            freqs = freqs[1:]
+            img = pg.ImageItem()
+            hist = pg.HistogramLUTItem()
+            hist.setImageItem(img)
+            hist.setLevels(np.min(Sxx), np.max(Sxx))
+            hist.gradient.restoreState(
+                    {'mode': 'rgb',
+                     'ticks': [(0.5, (33, 145, 140, 255)),
+                               (1.0, (250, 230, 0, 255)),
+                               (0.0, (69, 4, 87, 255))]})
+            self.plot_item.addItem(img)
+            img.setImage(Sxx.T)
+            img.setRect(times[0],freqs[0],times[-1]-times[0],freqs[-1]-freqs[0])
+        else:
+            times = np.linspace(0, tr.stats.endtime - tr.stats.starttime, num=len(tr.data))
 
-        # Plot the trace data with increased width
-        self.plot_item.plot(
-            x=times, y=tr.data, pen=pg.mkPen(color=(0, 0, 0), width=1), name=tr.id
-        )
+            # Plot the trace data with increased width
+            self.plot_item.plot(
+                x=times, y=tr.data, pen=pg.mkPen(color=(0, 0, 0), width=1), name=tr.id
+            )
 
         # Plot P wave marker
         if self.p_wave_time is not None:
@@ -762,6 +791,14 @@ class SeismicPlotter(QMainWindow):
         self.apply_filter_to_selected()
         self.reload_plot()
 
+    def toggle_show_spectrogram(self):
+        self.show_spectrogram = not self.show_spectrogram
+        self.show_spectrogram_action.setChecked(self.show_spectrogram)
+
+        x_range, _ = self.plot_widget.getViewBox().viewRange()
+        self.apply_filters()
+        self.plot_widget.getViewBox().setRange(xRange=x_range, padding=0)
+
 
 class FilterConfigWindow(QMainWindow):
     def __init__(self, parent=None):
@@ -799,6 +836,7 @@ class FilterConfigWindow(QMainWindow):
         apply_filter_btn = QPushButton("Apply Filter")
         apply_filter_btn.clicked.connect(self.apply_filter)
         layout.addWidget(apply_filter_btn)
+
 
     def apply_filter(self):
         try:
