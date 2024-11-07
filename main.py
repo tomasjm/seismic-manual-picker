@@ -65,9 +65,11 @@ class SeismicPlotter(QMainWindow):
     def load_data_from_csv(self):
         if self.data_file and os.path.exists(self.data_file):
             self.data_df = pd.read_csv(self.data_file, index_col="trace_path")
+            if "deleted" not in self.data_df.columns:
+                self.data_df['deleted'] = False
         else:
             self.data_df = pd.DataFrame(
-                columns=["trace_path", "p_wave_frame", "needs_review"]
+                columns=["trace_path", "p_wave_frame", "needs_review", "deleted"]
             )
             self.data_df.set_index("trace_path", inplace=True)
 
