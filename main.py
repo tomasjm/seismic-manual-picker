@@ -417,6 +417,7 @@ class SeismicPlotter(QMainWindow):
             self.load_data(group_key)
         print(self.traces[group_key])
         # Apply filter if parameters are set
+        self.clear_p_marker()
         if self.filter and self.filter_params:
             self.apply_filter_to_selected()
 
