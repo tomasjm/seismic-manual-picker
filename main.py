@@ -180,6 +180,8 @@ class SeismicPlotter(QMainWindow):
         self.toolbar.addAction(self.show_spectrogram_action)
 
         # PyQtGraph PlotWidget
+        self.spectrogram_widget = pg.PlotWidget()
+        main_layout.addWidget(self.spectrogram_widget)  # type: ignore
         self.plot_widget = pg.PlotWidget()
         main_layout.addWidget(self.plot_widget)  # type: ignore
 
@@ -199,10 +201,15 @@ class SeismicPlotter(QMainWindow):
         controls_layout.addLayout(list_container, 2)
 
         # Set up the plot
-        self.plot_item = self.plot_widget.getPlotItem()
+        self.plot_item = self.spectrogram_widget.getPlotItem()
         self.plot_item.setLabel("bottom", "Time (s)")
         self.plot_item.setLabel("left", "Amplitude")
         self.plot_item.showGrid(x=True, y=True)
+
+        self.spectrogram_item = self.spectrogram_widget.getPlotItem()
+        self.spectrogram_item.setLabel("bottom", "Time (s)")
+        self.spectrogram_item.setLabel("left", "Amplitude")
+        self.spectrogram_item.showGrid(x=True, y=True)
 
         # Initialize zoom state
         self.zoom_mode = False
@@ -210,6 +217,10 @@ class SeismicPlotter(QMainWindow):
         self.plot_widget.setMouseEnabled(x=False, y=False)  # Disable horizontal drag
         self.plot_widget.setMenuEnabled(False)
         self.plot_widget.scene().sigMouseClicked.connect(self.on_mouse_click)
+
+        self.spectrogram_widget.setMouseEnabled(x=False, y=False)  # Disable horizontal drag
+        self.spectrogram_widget.setMenuEnabled(False)
+        self.spectrogram_widget.scene().sigMouseClicked.connect(self.on_mouse_click)
 
         # Load Data Button
         load_btn = QPushButton("Load Seismic Data")
@@ -282,6 +293,7 @@ class SeismicPlotter(QMainWindow):
                         self.data_df.loc[group_key] = [
                             None,
                             False,
+                            False
                         ]  # p_wave_frame, needs_review
                 except Exception as e:
                     QMessageBox.critical(
@@ -340,40 +352,31 @@ class SeismicPlotter(QMainWindow):
 
         tr = st.select(channel="*Z")[0]
 
-        if self.show_spectrogram:
-            Sxx, freqs, times = mlab.specgram(tr.data - tr.data.mean(), Fs=tr.stats.sampling_rate, NFFT=128,pad_to=8*128, noverlap=int(128 * 0.9))
-            Sxx = np.sqrt(Sxx[1:, :])
-            freqs = freqs[1:]
-            img = pg.ImageItem()
-            hist = pg.HistogramLUTItem()
-            hist.setImageItem(img)
-            hist.setLevels(np.min(Sxx), np.max(Sxx))
-            hist.gradient.restoreState(
-                    {'mode': 'rgb',
-                     'ticks': [(0.5, (33, 145, 140, 255)),
-                               (1.0, (250, 230, 0, 255)),
-                               (0.0, (69, 4, 87, 255))]})
-            self.plot_item.addItem(img)
-            img.setImage(Sxx.T)
-            img.setRect(times[0],freqs[0],times[-1]-times[0],freqs[-1]-freqs[0])
-        else:
-            times = np.linspace(0, tr.stats.endtime - tr.stats.starttime, num=len(tr.data))
+        Sxx, freqs, times = mlab.specgram(tr.data - tr.data.mean(), Fs=tr.stats.sampling_rate, NFFT=128,pad_to=8*128, noverlap=int(128 * 0.9))
+        Sxx = np.sqrt(Sxx[1:, :])
+        freqs = freqs[1:]
+        img = pg.ImageItem()
+        hist = pg.HistogramLUTItem()
+        hist.setImageItem(img)
+        hist.setLevels(np.min(Sxx), np.max(Sxx))
+        hist.gradient.restoreState(
+                {'mode': 'rgb',
+                    'ticks': [(0.5, (33, 145, 140, 255)),
+                            (1.0, (250, 230, 0, 255)),
+                            (0.0, (69, 4, 87, 255))]})
+        self.spectrogram_item.addItem(img)
+        img.setImage(Sxx.T)
+        img.setRect(times[0],freqs[0],times[-1]-times[0],freqs[-1]-freqs[0])
+        times = np.linspace(0, tr.stats.endtime - tr.stats.starttime, num=len(tr.data))
 
-            # Plot the trace data with increased width
-            self.plot_item.plot(
-                x=times, y=tr.data, pen=pg.mkPen(color=(0, 0, 0), width=1), name=tr.id
-            )
+        # Plot the trace data with increased width
+        self.plot_item.plot(
+            x=times, y=tr.data, pen=pg.mkPen(color=(0, 0, 0), width=1), name=tr.id
+        )
 
         # Plot P wave marker
         if self.p_wave_time is not None:
-            self.marker_line = pg.InfiniteLine(
-                pos=self.p_wave_time,
-                angle=90,
-                pen=pg.mkPen(color=(255, 0, 0), width=2.5),
-                movable=True,
-            )
-            self.plot_item.addItem(self.marker_line)
-            self.marker_line.sigPositionChanged.connect(self.update_p_wave_marker)
+            self.setup_p_markers()
 
         # Indicate if the trace is tagged for review
         if (
@@ -397,6 +400,30 @@ class SeismicPlotter(QMainWindow):
         self.plot_item.setLabel("left", "Amplitude")
         self.plot_item.setLabel("bottom", "Time (s)")
         self.plot_item.enableAutoRange()
+
+    def setup_p_markers(self, pos= None):
+        p = self.p_wave_time
+        if pos is not None:
+            p = pos
+
+
+        self.spec_marker_line = pg.InfiniteLine(
+            pos=p,
+            angle=90,
+            pen=pg.mkPen(color=(255, 0, 0), width=2.5),
+            movable=True,
+        )
+        self.spectrogram_item.addItem(self.spec_marker_line)
+        self.spec_marker_line.sigPositionChanged.connect(self.update_p_wave_marker)
+
+        self.marker_line = pg.InfiniteLine(
+            pos=p,
+            angle=90,
+            pen=pg.mkPen(color=(255, 0, 0), width=2.5),
+            movable=True,
+        )
+        self.plot_item.addItem(self.marker_line)
+        self.marker_line.sigPositionChanged.connect(self.update_p_wave_marker)
 
     def plot_selected_trace(self, item_or_index=None):
         if isinstance(item_or_index, QListWidgetItem):
@@ -442,29 +469,19 @@ class SeismicPlotter(QMainWindow):
         self.plot_traces(selected_group_key=selected_trace)
 
     def update_p_wave_marker(self, line):
+        print(line)
         time = line.value()
         if self.plot_item:
             self.p_wave_time = time
             self.p_wave_label.setText(f"P Wave Time: {time:.2f} s")
+            self.spec_marker_line.setValue(time)
+            self.marker_line.setValue(time)
 
     def manually_mark_p(self):
         if self.plot_item:
-            mouse_point = self.plot_widget.mapFromGlobal(QCursor.pos())
-            mouse_point_f = self.plot_item.vb.mapSceneToView(mouse_point)
-            time = mouse_point_f.x()
-
-            if self.marker_line:
-                self.marker_line.setValue(time)
-            else:
-                self.marker_line = pg.InfiniteLine(
-                    pos=time, angle=90, pen=pg.mkPen(color=(255, 0, 0), width=2.5), movable=True
-                )
-                self.plot_item.addItem(self.marker_line)
-                self.marker_line.sigPositionChanged.connect(self.update_p_wave_marker)
-
-            self.p_wave_time = time
+            self.p_wave_time = 5 
+            self.setup_p_markers()
             self.p_wave_label.setText(f"P Wave Time: {self.p_wave_time:.2f} s")
-            self.reload_plot()
 
     def save_p_wave_time_to_csv(self):
         current_item = self.trace_list.currentItem()
