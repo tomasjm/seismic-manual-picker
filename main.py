@@ -340,7 +340,8 @@ class SeismicPlotter(QMainWindow):
         return file_groups
 
     def plot_traces(self, selected_group_key=None):
-        self.plot_item.clear()
+
+        self.clear_plot()
 
         if selected_group_key is None:
             raise Exception("Selected group key trace cannot be none")
@@ -664,13 +665,13 @@ class SeismicPlotter(QMainWindow):
 
     def clear_p_marker(self):
         self.marker_line = None
+        self.spec_marker_line = None
         self.p_wave_time = None
         self.p_wave_label.setText("Use 'P' key or toolbar button to mark P wave")
 
     def clear_plot(self):
         self.plot_item.clear()
-        self.clear_p_marker()
-        self.p_wave_label.setText("Plot cleared")
+        self.spectrogram_item.clear()
 
     def navigate_traces(self, direction):
         current_index = self.trace_list.currentRow()
