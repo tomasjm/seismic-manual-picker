@@ -49,6 +49,7 @@ class SeismicPlotter(QMainWindow):
         self.dragging = False  # Flag to indicate if marker is being dragged
         self.data_file = None  # Will be set when loading data
         self.show_spectrogram = False
+        self.active_plot = None  # Track which plot is being zoomed
 
         self.initUI()
         self.setupShortcuts()
@@ -216,11 +217,10 @@ class SeismicPlotter(QMainWindow):
         self.zoom_start = None
         self.plot_widget.setMouseEnabled(x=False, y=False)  # Disable horizontal drag
         self.plot_widget.setMenuEnabled(False)
-        self.plot_widget.scene().sigMouseClicked.connect(self.on_mouse_click)
+        # self.plot_widget.scene().sigMouseClicked.connect(self.on_mouse_click)
 
         self.spectrogram_widget.setMouseEnabled(x=False, y=False)  # Disable horizontal drag
         self.spectrogram_widget.setMenuEnabled(False)
-        self.spectrogram_widget.scene().sigMouseClicked.connect(self.on_mouse_click)
 
         # Load Data Button
         load_btn = QPushButton("Load Seismic Data")
@@ -374,6 +374,8 @@ class SeismicPlotter(QMainWindow):
         self.plot_item.plot(
             x=times, y=tr.data, pen=pg.mkPen(color=(0, 0, 0), width=1), name=tr.id
         )
+
+        self.spectrogram_item.getViewBox().setXLink(self.plot_item)
 
         # Plot P wave marker
         if self.p_wave_time is not None:
@@ -781,12 +783,15 @@ class SeismicPlotter(QMainWindow):
         self.traces_label.setText(f"Loaded Traces: {visible_traces}/{total_traces}")
         
     def zoom_in(self):
+        self.spectrogram_widget.getViewBox().scaleBy((0.5, 0.5))
         self.plot_widget.getViewBox().scaleBy((0.5, 0.5))
 
     def zoom_out(self):
+        self.spectrogram_widget.getViewBox().scaleBy((2, 2))
         self.plot_widget.getViewBox().scaleBy((2, 2))
 
     def reset_view(self):
+        self.spectrogram_widget.getViewBox().autoRange()
         self.plot_widget.getViewBox().autoRange()
 
     def toggle_zoom_select_mode(self):
@@ -794,45 +799,68 @@ class SeismicPlotter(QMainWindow):
         self.zoom_select_action.setChecked(self.zoom_select_mode)
         if self.zoom_select_mode:
             self.plot_widget.setCursor(Qt.CrossCursor)
-            self.plot_widget.scene().sigMouseClicked.disconnect(self.on_mouse_click)
             self.plot_widget.scene().sigMouseClicked.connect(self.on_zoom_select_click)
             self.plot_widget.scene().sigMouseMoved.connect(self.on_zoom_select_move)
+
+            self.spectrogram_widget.setCursor(Qt.CrossCursor)
+            self.spectrogram_widget.scene().sigMouseClicked.connect(self.on_zoom_select_click)
+            self.spectrogram_widget.scene().sigMouseMoved.connect(self.on_zoom_select_move)
         else:
             self.plot_widget.setCursor(Qt.ArrowCursor)
             self.plot_widget.scene().sigMouseClicked.disconnect(
                 self.on_zoom_select_click
             )
             self.plot_widget.scene().sigMouseMoved.disconnect(self.on_zoom_select_move)
-            self.plot_widget.scene().sigMouseClicked.connect(self.on_mouse_click)
+
+            self.spectrogram_widget.setCursor(Qt.ArrowCursor)
+            self.spectrogram_widget.scene().sigMouseClicked.disconnect(
+                self.on_zoom_select_click
+            )
+            self.spectrogram_widget.scene().sigMouseMoved.disconnect(self.on_zoom_select_move)
             if self.zoom_rect:
                 self.plot_item.removeItem(self.zoom_rect)
                 self.zoom_rect = None
 
     def on_zoom_select_click(self, event):
+        print(event)
         if event.button() == Qt.LeftButton:
-            pos = self.plot_item.vb.mapSceneToView(event.scenePos())
-            if self.zoom_start is None:
-                self.zoom_start = pos.x()
-                self.zoom_rect = pg.LinearRegionItem([pos.x(), pos.x()], movable=False)
-                self.plot_item.addItem(self.zoom_rect)
-            else:
-                self.apply_zoom(self.zoom_start, pos.x())
-                self.zoom_start = None
-                self.plot_item.removeItem(self.zoom_rect)
-                self.zoom_rect = None
+            # Determine which plot was clicked
+            clicked_plot = None
+            # Get the source view widget of the click event
+            # Get the scene position and check which view contains it
+            scene_pos = event.scenePos()
+            print(scene_pos)
+            print(self.plot_item.sceneBoundingRect())
+            print(self.spectrogram_item.sceneBoundingRect())
+            
+            if self.plot_widget.sceneBoundingRect().contains(scene_pos):
+                clicked_plot = self.plot_item
+            elif self.spectrogram_widget.sceneBoundingRect().contains(scene_pos):
+                clicked_plot = self.spectrogram_item
+            
+            if clicked_plot:
+                pos = clicked_plot.vb.mapSceneToView(event.scenePos())
+                if self.zoom_start is None:
+                    self.zoom_start = pos.x()
+                    self.zoom_rect = pg.LinearRegionItem([pos.x(), pos.x()], movable=False)
+                    self.active_plot = clicked_plot
+                    clicked_plot.addItem(self.zoom_rect)
+                else:
+                    self.apply_zoom(self.zoom_start, pos.x(), clicked_plot)
+                    self.zoom_start = None
+                    self.active_plot.removeItem(self.zoom_rect)
+                    self.zoom_rect = None
+                    self.active_plot = None
 
     def on_zoom_select_move(self, event):
-        if self.zoom_start is not None and self.zoom_rect is not None:
-            pos = self.plot_item.vb.mapSceneToView(event)
+        if self.zoom_start is not None and self.zoom_rect is not None and self.active_plot:
+            pos = self.active_plot.vb.mapSceneToView(event)
             self.zoom_rect.setRegion([self.zoom_start, pos.x()])
 
-    def on_mouse_click(self, event):
-        # This method is now empty as we're not using it for zoom functionality
-        pass
 
-    def apply_zoom(self, start, end):
+    def apply_zoom(self, start, end, plot_item):
         left, right = min(start, end), max(start, end)
-        self.plot_item.setXRange(left, right, padding=0)
+        plot_item.setXRange(left, right, padding=0)
 
     def open_filter_config(self):
         self.filter_config_window = FilterConfigWindow(self)
