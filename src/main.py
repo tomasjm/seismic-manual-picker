@@ -1,3 +1,4 @@
+import json
 import os
 from PyQt5.QtWidgets import (
     QApplication,
@@ -6,6 +7,7 @@ from PyQt5.QtWidgets import (
     QMessageBox,
     QListWidgetItem,
 )
+import uuid
 from src.plotting import plot_spectrogram
 from src.filter_window import FilterConfigWindow
 from src.trigger_window import TriggerConfigWindow
@@ -15,12 +17,12 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtGui import  QIcon
 import pyqtgraph as pg
 from pyqtgraph import LabelItem
-from obspy.signal.trigger import classic_sta_lta, trigger_onset
 import numpy as np
 import pandas as pd
 
 from src.csv_operations import CSVHandler
 from src.utils import group_sac_files, load_trace_data, calculate_wave_frame
+from src.trigger_operations import  calculate_triggers
 
 class SeismicPlotter(QMainWindow):
     def __init__(self):
@@ -30,6 +32,7 @@ class SeismicPlotter(QMainWindow):
         self.setWindowIcon(QIcon(os.path.join("resources", "icons", "app_icon.png")))
 
         self.traces = {}  # List to store seismic traces
+        self.current_p_lines = {}
         self.p_wave_time = None  # P Wave marker time
         self.filtered_traces = {}  # List to store filtered traces
         self.triggers = {}  # List to store trigger times
@@ -123,9 +126,10 @@ class SeismicPlotter(QMainWindow):
 
         self.spectrogram_item.getViewBox().setXLink(self.plot_item)
 
-        # Plot P wave marker
-        if self.p_wave_time is not None:
-            self.setup_p_markers()
+        
+        for trace_id, lines in self.current_p_lines.items():
+            self.plot_item.addItem(lines.get('plot'))
+            self.spectrogram_item.addItem(lines.get('spec'))
 
         # Indicate if the trace is tagged for review
         if (
@@ -150,27 +154,10 @@ class SeismicPlotter(QMainWindow):
         self.plot_item.setLabel("bottom", "Time (s)")
         self.plot_item.enableAutoRange()
 
-    def setup_p_markers(self, pos= None):
-        p = self.p_wave_time
-        if pos is not None:
-            p = pos
-        self.spec_marker_line = pg.InfiniteLine(
-            pos=p,
-            angle=90,
-            pen=pg.mkPen(color=(255, 0, 0), width=2.5),
-            movable=True,
-        )
-        self.spectrogram_item.addItem(self.spec_marker_line)
-        self.spec_marker_line.sigPositionChanged.connect(self.update_p_wave_marker)
+    def get_current(self):
+        current_item = self.trace_list.currentItem()
+        return current_item.text()
 
-        self.marker_line = pg.InfiniteLine(
-            pos=p,
-            angle=90,
-            pen=pg.mkPen(color=(255, 0, 0), width=2.5),
-            movable=True,
-        )
-        self.plot_item.addItem(self.marker_line)
-        self.marker_line.sigPositionChanged.connect(self.update_p_wave_marker)
 
     def plot_selected_trace(self, item_or_index=None):
         if isinstance(item_or_index, QListWidgetItem):
@@ -203,31 +190,71 @@ class SeismicPlotter(QMainWindow):
         if group_key in self.data_df.index and pd.notna(
             self.data_df.loc[group_key, "p_wave_frame"]
         ):
-            p_wave_frame = self.data_df.loc[group_key, "p_wave_frame"]
+            p_wave_frame = json.loads(self.data_df.loc[group_key, "p_wave_frame"])
             st = self.traces[group_key]
             tr = st.select(channel="*Z")[0]
             wave_offset = 0
             if self.filter:
                 wave_offset = int(self.filter_params["offset"])
-            self.p_wave_time = p_wave_frame / tr.stats.sampling_rate - wave_offset
-            self.p_wave_label.setText(f"P Wave Time: {self.p_wave_time:.2f} s")
+            for wave in p_wave_frame:
+                wave_time = wave / tr.stats.sampling_rate - wave_offset
+                self.add_p_markers(wave_time)
 
         selected_trace = group_key
         self.plot_traces(selected_group_key=selected_trace)
 
-    def update_p_wave_marker(self, line):
-        time = line.value()
+    def update_p_wave_marker(self, current_line, id):
+        register = self.current_p_lines.get(id)
+        plot_marker = register['plot']
+        spec_marker = register['spec']
+        time = current_line.value()
         if self.plot_item:
             self.p_wave_time = time
-            self.p_wave_label.setText(f"P Wave Time: {time:.2f} s")
-            self.spec_marker_line.setValue(time)
-            self.marker_line.setValue(time)
+            # self.p_wave_label.setText(f"P Wave Time: {time:.2f} s")
+            plot_marker.setValue(time)
+            spec_marker.setValue(time)
+    
+    def add_p_markers(self, pos=5):
+        id = uuid.uuid4() 
+        plot_marker= pg.InfiniteLine(
+            pos=pos,
+            angle=90,
+            pen=pg.mkPen(color=(255, 0, 0), width=2.5),
+            movable=True,
+        )
+        spec_marker= pg.InfiniteLine(
+            pos=pos,
+            angle=90,
+            pen=pg.mkPen(color=(255, 0, 0), width=2.5),
+            movable=True,
+        )
+        plot_marker.sigPositionChanged.connect(lambda ev: self.update_p_wave_marker(ev, id))
+        plot_marker.sigClicked.connect(lambda ev: self.select_p_marker(id))
+        spec_marker.sigPositionChanged.connect(lambda ev: self.update_p_wave_marker(ev, id))
+        spec_marker.sigClicked.connect(lambda ev: self.select_p_marker(id))
+        self.current_p_lines[id] = {
+            "plot": plot_marker,
+            "spec": spec_marker 
+        } 
+
+        self.plot_item.addItem(plot_marker)
+        self.spectrogram_item.addItem(spec_marker)
+        
+    def select_p_marker(self, id):
+        for c_id, lines in self.current_p_lines.items():
+            lines.get("plot").setPen(pg.mkPen(color=(255,0,0), width=2.5))
+            lines.get("spec").setPen(pg.mkPen(color=(255,0,0), width=2.5))
+            lines.get("plot").setHoverPen(pg.mkPen(color=(255,0,0), width=2.5))
+            lines.get("spec").setHoverPen(pg.mkPen(color=(255,0,0), width=2.5))
+        self.selected_p_marker = id
+        lines = self.current_p_lines.get(id)
+        lines.get("plot").setPen(pg.mkPen(color=(0, 0, 255), width=2.5))
+        lines.get("spec").setPen(pg.mkPen(color=(0, 0, 255), width=2.5))
+        lines.get("plot").setHoverPen(pg.mkPen(color=(0, 0, 255), width=2.5))
+        lines.get("spec").setHoverPen(pg.mkPen(color=(0, 0, 255), width=2.5))
 
     def manually_mark_p(self):
-        if self.plot_item:
-            self.p_wave_time = 5 
-            self.setup_p_markers()
-            self.p_wave_label.setText(f"P Wave Time: {self.p_wave_time:.2f} s")
+        self.add_p_markers()
 
     def save_p_wave_time_to_csv(self):
         current_item = self.trace_list.currentItem()
@@ -236,21 +263,23 @@ class SeismicPlotter(QMainWindow):
             group_key = current_item.text()
             st = self.traces[group_key]
             tr = st.select(channel="*Z")[0]
-            p_wave_frame = calculate_wave_frame(  # Using utility function
-                self.p_wave_time, 
-                tr.stats.sampling_rate, 
-                self.filter_params if self.filter else None
-            )
-            self.csv_handler.update_p_wave_time(group_key, p_wave_frame)
+            current_p_waves = []
+            for id, lines in self.current_p_lines.items():
+                p_marker = lines.get('plot')
+                p_wave_time = p_marker.value()
+                p_wave_frame = calculate_wave_frame(  # Using utility function
+                    p_wave_time, 
+                    tr.stats.sampling_rate, 
+                    self.filter_params if self.filter else None
+                )
+                current_p_waves.append(p_wave_frame)
+            self.csv_handler.update_p_wave_time(group_key, current_p_waves)
             QMessageBox.information(self, "Success", f"P-wave time for {group_key} saved successfully.")
 
     def save_p_wave_time(self):
-        if self.p_wave_time is not None:
-            self.save_p_wave_time_to_csv()
-            self.navigate_to_next_trace()
-            self.apply_filters()
-        else:
-            QMessageBox.warning(self, "Warning", "No P-wave time to save. Please mark a P-wave first.")
+        self.save_p_wave_time_to_csv()
+        self.navigate_to_next_trace()
+        self.apply_filters()
 
     def navigate_to_next_trace(self):
         current_index = self.trace_list.currentRow()
@@ -274,6 +303,14 @@ class SeismicPlotter(QMainWindow):
             "Success",
             f"{filter_params['type'].capitalize()} filter parameters set successfully",
         )
+
+    def delete_selected_p_marker(self):
+        if self.selected_p_marker in self.current_p_lines:
+            plot_line = self.current_p_lines[self.selected_p_marker].get("plot")
+            spec_line = self.current_p_lines[self.selected_p_marker].get("spec")
+            self.plot_item.removeItem(plot_line)
+            self.spectrogram_item.removeItem(spec_line)
+            del self.current_p_lines[self.selected_p_marker]
 
     def apply_filter_to_selected(self):
         if not self.filter or not self.filter_params:
@@ -332,33 +369,25 @@ class SeismicPlotter(QMainWindow):
 
     def calculate_trigger_for_selected(self, reload=False):
         current_item = self.trace_list.currentItem()
-
         group_key = current_item.text()
         st = (
             self.filtered_traces.get(group_key)
             if self.filter
             else self.traces.get(group_key)
         )
-
-        self.triggers[group_key] = {}
-        first_trigger_time = None
-        for tr in st:
-            cft = classic_sta_lta(
-                tr.data,
-                int(self.sta * tr.stats.sampling_rate),
-                int(self.lta * tr.stats.sampling_rate),
-            )
-            on_off = trigger_onset(cft, self.threshold, self.threshold)
-
-            if len(on_off) > 0:
-                self.triggers[group_key][tr.id] = on_off
-                trigger_time = on_off[0][0] / tr.stats.sampling_rate
-                if first_trigger_time is None or trigger_time < first_trigger_time:
-                    first_trigger_time = trigger_time
-
+        tr = st.select(channel="*Z")[0]
+        
+        triggers, first_trigger_time = calculate_triggers(
+            tr, 
+            self.sta, 
+            self.lta, 
+            self.threshold
+        )
+        
+        self.triggers[group_key] = [t_arr/tr.stats.sampling_rate for t_arr in triggers ] 
+        
         if first_trigger_time is not None:
-            self.p_wave_time = first_trigger_time
-            self.p_wave_label.setText(f"P Wave Time: {self.p_wave_time:.2f} s")
+            self.add_p_markers(first_trigger_time)
 
     def apply_trigger_to_selected(self):
         current_item = self.trace_list.currentItem()
@@ -377,10 +406,7 @@ class SeismicPlotter(QMainWindow):
         )
 
     def clear_p_marker(self):
-        self.marker_line = None
-        self.spec_marker_line = None
-        self.p_wave_time = None
-        self.p_wave_label.setText("Use 'P' key or toolbar button to mark P wave")
+        self.current_p_lines = {}
 
     def clear_plot(self):
         self.plot_item.clear()
@@ -430,10 +456,6 @@ class SeismicPlotter(QMainWindow):
             QMessageBox.warning(
                 self, "No Selection", "Please select a trace to toggle review status."
             )
-
-
-    def tag_for_review(self):
-        self.toggle_review_tag()
 
     def apply_filters(self):
         self.clear_p_marker()
@@ -490,9 +512,8 @@ class SeismicPlotter(QMainWindow):
         show_item = show_item and (pd.isna(deleted) or not deleted) 
         return show_item
 
-
     def reset_view(self):
-        self.spectrogram_wdiget.getViewBox().autoRange()
+        self.spectrogram_widget.getViewBox().autoRange()
         self.plot_widget.getViewBox().autoRange()
 
     def toggle_zoom_select_mode(self):

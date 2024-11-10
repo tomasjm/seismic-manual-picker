@@ -58,6 +58,10 @@ def setup_toolbar(window, main_layout):
     reset_view_action.triggered.connect(window.reset_view)
     window.toolbar.addAction(reset_view_action)
 
+    reload_plot_action = QAction(QIcon.fromTheme("view-refresh"), "Reload plot [L]", window)
+    reload_plot_action.triggered.connect(window.reload_plot)
+    window.toolbar.addAction(reload_plot_action)
+
     # Add zoom selection action
     window.zoom_select_action = QAction(QIcon.fromTheme("zoom-select"), "Zoom Select [Z]", window)
     window.zoom_select_action.triggered.connect(window.toggle_zoom_select_mode)
@@ -65,9 +69,13 @@ def setup_toolbar(window, main_layout):
     window.toolbar.addAction(window.zoom_select_action)
 
     # Add button to manually mark P
-    window.mark_manual_p = QAction("Mark P [P]", window)
+    window.mark_manual_p = QAction("Add P mark [P]", window)
     window.mark_manual_p.triggered.connect(window.manually_mark_p)
     window.toolbar.addAction(window.mark_manual_p)
+
+    window.delete_p = QAction("Delete selected P [X]", window)
+    window.delete_p.triggered.connect(window.delete_selected_p_marker)
+    window.toolbar.addAction(window.delete_p)
 
     # Add button to toggle review tag
     toggle_review_tag = QAction("Toggle tag for review [T]", window)
@@ -127,12 +135,12 @@ def setup_controls(window, sidebar, list_container):
     window.trace_list.itemClicked.connect(window.plot_selected_trace)
     list_container.addWidget(window.trace_list)
 
-    # P Wave Marker Controls
-    sidebar.addWidget(QLabel("P Wave Marker:"))
-    p_wave_layout = QHBoxLayout()
-    window.p_wave_label = QLabel("Use 'P' key or toolbar button to mark P wave")
-    p_wave_layout.addWidget(window.p_wave_label)
-    sidebar.addLayout(p_wave_layout)
+    # # P Wave Marker Controls
+    # sidebar.addWidget(QLabel("P Wave Marker:"))
+    # p_wave_layout = QHBoxLayout()
+    # window.p_wave_label = QLabel("Use 'P' key or toolbar button to mark P wave")
+    # p_wave_layout.addWidget(window.p_wave_label)
+    # sidebar.addLayout(p_wave_layout)
 
     # Filter Configuration Button
     open_filter_config_btn = QPushButton("Open Filter Configuration")
