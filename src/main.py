@@ -14,12 +14,12 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtGui import  QIcon
 import pyqtgraph as pg
 from pyqtgraph import LabelItem
-from obspy import read
 from obspy.signal.trigger import classic_sta_lta, trigger_onset
 import numpy as np
 import pandas as pd
 from matplotlib import mlab
-
+from src.csv_operations import CSVHandler
+from src.utils import group_sac_files, load_trace_data, calculate_wave_frame
 
 class SeismicPlotter(QMainWindow):
     def __init__(self):
@@ -39,31 +39,11 @@ class SeismicPlotter(QMainWindow):
         self.dragging = False  # Flag to indicate if marker is being dragged
         self.data_file = None  # Will be set when loading data
         self.active_plot = None  # Track which plot is being zoomed
+        self.csv_handler = CSVHandler()
+        self.data_df = self.csv_handler.load_data_from_csv()
 
         setup_ui(self)
         setup_shortcuts(self)
-        self.load_data_from_csv()
-
-
-    def load_data_from_csv(self):
-        if self.data_file and os.path.exists(self.data_file):
-            self.data_df = pd.read_csv(self.data_file, index_col="trace_path")
-            if "deleted" not in self.data_df.columns:
-                self.data_df['deleted'] = False
-        else:
-            self.data_df = pd.DataFrame(
-                columns=["trace_path", "p_wave_frame", "needs_review", "deleted"]
-            )
-            self.data_df.set_index("trace_path", inplace=True)
-
-    def save_data_to_csv(self):
-        if self.data_file:
-            self.data_df.to_csv(self.data_file)
-            print("saving csv")
-            print(self.data_df)
-        else:
-            print("Error: data_file path not set")
-
 
     def handle_escape(self):
         # Clear focus from any widget
@@ -89,9 +69,8 @@ class SeismicPlotter(QMainWindow):
             options=options,
         )
         if folder:
-            self.data_file = os.path.join(folder, "data.csv")
-            self.load_data_from_csv()  # Reload data with new file path
-            self.file_groups = self.group_sac_files(folder)
+            self.data_df = self.csv_handler.set_data_file(folder)
+            self.file_groups = group_sac_files(folder)
             for group_key, files in self.file_groups.items():
                 try:
                     item = QListWidgetItem(group_key)
@@ -107,44 +86,15 @@ class SeismicPlotter(QMainWindow):
                         self, "Error", f"Failed to load {group_key}.\nError: {str(e)}"
                     )
 
-            self.save_data_to_csv()
-
-            # Apply filters and update the trace list
+            self.csv_handler.save_data_to_csv()
             self.apply_filters()
 
     def load_data(self, group_key):
         files = self.file_groups[group_key]
-        try:
-            st = read(files[0])  # Read the first file
-            print(f"Loaded first file: {files[0]}")
-            print(f"Number of traces: {len(st)}")
-            print(f"First trace data length: {len(st[0].data)}")
-            for file in files[1:]:
-                st += read(file)  # Add other components
-                print(f"Added file: {file}")
+        st = load_trace_data(files, group_key)  # Using utility function
+        if st:
             self.traces[group_key] = st
-            print(f"Total number of traces for {group_key}: {len(st)}")
-            print(f"Trace IDs: {[tr.id for tr in st]}")
-        except Exception as e:
-            QMessageBox.critical(
-                self, "Error", f"Failed to load {group_key}.\nError: {str(e)}"
-            )
 
-    # agrupa los tres sacs que encuentra *_Z.sac *_E *_N y los guarda con una key equivalente a event_id/station_id segun la estructura de carpeta/dato que usamos
-    def group_sac_files(self, folder):
-        file_groups = {}
-        for root, dirs, files in os.walk(folder):
-            for file in files:
-                if file.endswith((".sac", ".SAC")):
-                    path_parts = os.path.relpath(root, folder).split(os.path.sep)
-                    if len(path_parts) >= 2:
-                        event = path_parts[0]
-                        station = path_parts[-1]
-                        group_key = f"{event}/{station}"
-                        if group_key not in file_groups:
-                            file_groups[group_key] = []
-                        file_groups[group_key].append(os.path.join(root, file))
-        return file_groups
 
     def plot_traces(self, selected_group_key=None):
 
@@ -300,12 +250,12 @@ class SeismicPlotter(QMainWindow):
             group_key = current_item.text()
             st = self.traces[group_key]
             tr = st.select(channel="*Z")[0]
-            p_wave_frame = int(self.p_wave_time * tr.stats.sampling_rate)
-            wave_offset = 0
-            if self.filter:
-                wave_offset = int(self.filter_params["offset"] * tr.stats.sampling_rate)
-            self.data_df.loc[group_key, "p_wave_frame"] = p_wave_frame + wave_offset
-            self.save_data_to_csv()
+            p_wave_frame = calculate_wave_frame(  # Using utility function
+                self.p_wave_time, 
+                tr.stats.sampling_rate, 
+                self.filter_params if self.filter else None
+            )
+            self.csv_handler.update_p_wave_time(group_key, p_wave_frame)
             QMessageBox.information(self, "Success", f"P-wave time for {group_key} saved successfully.")
 
     def save_p_wave_time(self):
@@ -405,8 +355,6 @@ class SeismicPlotter(QMainWindow):
             return
 
         group_key = current_item.text()
-
-
         st = (
             self.filtered_traces.get(group_key)
             if self.filter
@@ -500,10 +448,7 @@ class SeismicPlotter(QMainWindow):
         current_item = self.trace_list.currentItem()
         if current_item:
             group_key = current_item.text()
-            current_status = self.data_df.loc[group_key, "needs_review"]
-            new_status = not current_status
-            self.data_df.loc[group_key, "needs_review"] = new_status
-            self.save_data_to_csv()
+            new_status = self.csv_handler.toggle_review_status(group_key)
             status_text = "tagged for review" if new_status else "untagged from review"
             QMessageBox.information(
                 self,
@@ -518,14 +463,12 @@ class SeismicPlotter(QMainWindow):
 
     def toggle_deleted_trace(self):
         current_item = self.trace_list.currentItem()
-
         if current_item:
             ret = QMessageBox.question(self,'', f"Are you sure to mark as removed trace: {current_item.text()}?", QMessageBox.Yes | QMessageBox.No)
             if ret == QMessageBox.No:
                 return
             group_key = current_item.text()
-            self.data_df.loc[group_key, "deleted"] = True 
-            self.save_data_to_csv()
+            self.csv_handler.mark_as_deleted(group_key)
             self.navigate_to_next_trace()
         else:
             QMessageBox.warning(
@@ -656,6 +599,3 @@ class SeismicPlotter(QMainWindow):
         self.filter = True
         self.apply_filter_to_selected()
         self.reload_plot()
-
-
-
