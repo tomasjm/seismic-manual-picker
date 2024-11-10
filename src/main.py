@@ -6,6 +6,7 @@ from PyQt5.QtWidgets import (
     QMessageBox,
     QListWidgetItem,
 )
+from src.plotting import plot_spectrogram
 from src.filter_window import FilterConfigWindow
 from src.trigger_window import TriggerConfigWindow
 from src.shortcuts import setup_shortcuts
@@ -17,7 +18,7 @@ from pyqtgraph import LabelItem
 from obspy.signal.trigger import classic_sta_lta, trigger_onset
 import numpy as np
 import pandas as pd
-from matplotlib import mlab
+
 from src.csv_operations import CSVHandler
 from src.utils import group_sac_files, load_trace_data, calculate_wave_frame
 
@@ -110,21 +111,9 @@ class SeismicPlotter(QMainWindow):
 
         tr = st.select(channel="*Z")[0]
 
-        Sxx, freqs, times = mlab.specgram(tr.data - tr.data.mean(), Fs=tr.stats.sampling_rate, NFFT=128,pad_to=8*128, noverlap=int(128 * 0.9))
-        Sxx = np.sqrt(Sxx[1:, :])
-        freqs = freqs[1:]
-        img = pg.ImageItem()
-        hist = pg.HistogramLUTItem()
-        hist.setImageItem(img)
-        hist.setLevels(np.min(Sxx), np.max(Sxx))
-        hist.gradient.restoreState(
-                {'mode': 'rgb',
-                    'ticks': [(0.5, (33, 145, 140, 255)),
-                            (1.0, (250, 230, 0, 255)),
-                            (0.0, (69, 4, 87, 255))]})
+        img = plot_spectrogram(tr)
         self.spectrogram_item.addItem(img)
-        img.setImage(Sxx.T)
-        img.setRect(times[0],freqs[0],times[-1]-times[0],freqs[-1]-freqs[0])
+
         times = np.linspace(0, tr.stats.endtime - tr.stats.starttime, num=len(tr.data))
 
         # Plot the trace data with increased width
@@ -165,8 +154,6 @@ class SeismicPlotter(QMainWindow):
         p = self.p_wave_time
         if pos is not None:
             p = pos
-
-
         self.spec_marker_line = pg.InfiniteLine(
             pos=p,
             angle=90,
@@ -229,7 +216,6 @@ class SeismicPlotter(QMainWindow):
         self.plot_traces(selected_group_key=selected_trace)
 
     def update_p_wave_marker(self, line):
-        print(line)
         time = line.value()
         if self.plot_item:
             self.p_wave_time = time
@@ -345,14 +331,7 @@ class SeismicPlotter(QMainWindow):
         self.trigger_config_window.show()
 
     def calculate_trigger_for_selected(self, reload=False):
-        if not self.trigger:
-            print("Trigger is not enabled")
-            return
-
         current_item = self.trace_list.currentItem()
-        if not current_item:
-            print("No item selected")
-            return
 
         group_key = current_item.text()
         st = (
@@ -361,48 +340,25 @@ class SeismicPlotter(QMainWindow):
             else self.traces.get(group_key)
         )
 
-        if not st:
-            print(f"No data found for {group_key}")
-            return
-
-        print(f"Processing group: {group_key}")
-        print(f"STA: {self.sta}, LTA: {self.lta}, Threshold: {self.threshold}")
-
         self.triggers[group_key] = {}
         first_trigger_time = None
         for tr in st:
-            print(f"Processing trace: {tr.id}")
-            print(f"Trace stats: {tr.stats}")
-            print(f"Data length: {len(tr.data)}")
-
-            if len(tr.data) == 0:
-                print("Trace data is empty, skipping")
-                continue
-
             cft = classic_sta_lta(
                 tr.data,
                 int(self.sta * tr.stats.sampling_rate),
                 int(self.lta * tr.stats.sampling_rate),
             )
             on_off = trigger_onset(cft, self.threshold, self.threshold)
-            print(f"Trigger points found: {len(on_off)}")
 
             if len(on_off) > 0:
-                print(f"Trigger saved for {tr.id}")
                 self.triggers[group_key][tr.id] = on_off
                 trigger_time = on_off[0][0] / tr.stats.sampling_rate
                 if first_trigger_time is None or trigger_time < first_trigger_time:
                     first_trigger_time = trigger_time
-            else:
-                print(f"No triggers found for {tr.id}")
 
         if first_trigger_time is not None:
             self.p_wave_time = first_trigger_time
             self.p_wave_label.setText(f"P Wave Time: {self.p_wave_time:.2f} s")
-            print(f"P wave time updated to {self.p_wave_time:.2f}")
-
-        elif not any(self.triggers[group_key]):
-            print("No triggers found for any trace in this group")
 
     def apply_trigger_to_selected(self):
         current_item = self.trace_list.currentItem()
@@ -481,7 +437,6 @@ class SeismicPlotter(QMainWindow):
 
     def apply_filters(self):
         self.clear_p_marker()
-        
         # Store the currently selected item
         current_item = self.trace_list.currentItem()
         current_group_key = current_item.text() if current_item else None
@@ -489,24 +444,7 @@ class SeismicPlotter(QMainWindow):
         self.trace_list.clear()
         total_traces = len(self.file_groups)
         for group_key in self.file_groups.keys():
-            show_item = True
-            
-            tagged_state = self.filter_tagged.checkState()
-            p_wave_state = self.filter_with_p.checkState()
-            
-            if tagged_state == Qt.Checked:
-                show_item = show_item and self.data_df.loc[group_key, "needs_review"]
-            elif tagged_state == Qt.PartiallyChecked:
-                show_item = show_item and not self.data_df.loc[group_key, "needs_review"]
-            
-            if p_wave_state == Qt.Checked:
-                show_item = show_item and pd.notnull(self.data_df.loc[group_key, "p_wave_frame"])
-            elif p_wave_state == Qt.PartiallyChecked:
-                show_item = show_item and pd.isnull(self.data_df.loc[group_key, "p_wave_frame"])
-
-            deleted = self.data_df.loc[group_key, "deleted"]
-            show_item = show_item and (pd.isna(deleted) or not deleted) 
-
+            show_item = self.get_show_item_by_filter(self.filter_tagged.checkState(), self.filter_with_p.checkState(), group_key) 
             if show_item:
                 self.trace_list.addItem(QListWidgetItem(group_key))
 
@@ -531,6 +469,26 @@ class SeismicPlotter(QMainWindow):
         # Update the traces label with the count
         visible_traces = self.trace_list.count()
         self.traces_label.setText(f"Loaded Traces: {visible_traces}/{total_traces}")
+
+    def get_show_item_by_filter(self, review_tagged, p_marked, group_key):
+        show_item = True
+            
+        tagged_state = review_tagged 
+        p_wave_state = p_marked 
+        
+        if tagged_state == Qt.Checked:
+            show_item = show_item and self.data_df.loc[group_key, "needs_review"]
+        elif tagged_state == Qt.PartiallyChecked:
+            show_item = show_item and not self.data_df.loc[group_key, "needs_review"]
+        
+        if p_wave_state == Qt.Checked:
+            show_item = show_item and pd.notnull(self.data_df.loc[group_key, "p_wave_frame"])
+        elif p_wave_state == Qt.PartiallyChecked:
+            show_item = show_item and pd.isnull(self.data_df.loc[group_key, "p_wave_frame"])
+
+        deleted = self.data_df.loc[group_key, "deleted"]
+        show_item = show_item and (pd.isna(deleted) or not deleted) 
+        return show_item
 
 
     def reset_view(self):
