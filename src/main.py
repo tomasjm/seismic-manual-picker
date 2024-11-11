@@ -33,7 +33,7 @@ class SeismicPlotter(QMainWindow):
 
         self.traces = {}  # List to store seismic traces
         self.current_p_lines = {}
-        self.p_wave_time = None  # P Wave marker time
+        self.first_trigger = None
         self.filtered_traces = {}  # List to store filtered traces
         self.triggers = {}  # List to store trigger times
         self.filter = False
@@ -185,6 +185,8 @@ class SeismicPlotter(QMainWindow):
         # Calculate trigger and update P wave marker
         if self.trigger:
             self.calculate_trigger_for_selected()
+        else:
+            self.first_trigger = None
 
         # Load P-wave arrival time from CSV
         if group_key in self.data_df.index and pd.notna(
@@ -199,7 +201,7 @@ class SeismicPlotter(QMainWindow):
             for wave in p_wave_frame:
                 wave_time = wave / tr.stats.sampling_rate - wave_offset
                 self.add_p_markers(wave_time)
-        elif self.first_trigger:
+        elif self.first_trigger is not None:
             self.add_p_markers(self.first_trigger)
 
         selected_trace = group_key
