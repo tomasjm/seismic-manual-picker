@@ -2,22 +2,22 @@ from PyQt5.QtWidgets import QMessageBox
 from obspy import read
 import pandas as pd
 import os
+import re
 
 def group_sac_files(folder):
     """Groups SAC files by event/station."""
     file_groups = {}
-    for root, dirs, files in os.walk(folder):
+    print(f"loading folder {folder}")
+    for root, dirs, files in os.walk(os.path.join(folder)):
         for file in files:
-            if file.endswith((".sac", ".SAC")):
-                path_parts = os.path.relpath(root, folder).split(os.path.sep)
-                if len(path_parts) >= 2:
-                    event = path_parts[0]
-                    station = path_parts[-1]
-                    group_key = f"{event}/{station}"
-                    if group_key not in file_groups:
-                        file_groups[group_key] = []
-                    file_groups[group_key].append(os.path.join(root, file))
-    return file_groups
+            if file.endswith((".sac", ".SAC", ".mseed", ".MSEED")):
+                print(f"found file {file}")
+                group_key = file.split(".")[0]
+                if group_key not in file_groups:
+                    file_groups[group_key] = []
+                file_groups[group_key].append(os.path.join(root, file))
+    sorted_data = dict(sorted(file_groups.items(), key=lambda x: int(re.search(r'\d+', x[0]).group())))
+    return sorted_data 
 
 def load_trace_data(files, group_key):
     """Loads seismic trace data from files."""
