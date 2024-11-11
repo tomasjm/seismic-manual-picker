@@ -199,6 +199,8 @@ class SeismicPlotter(QMainWindow):
             for wave in p_wave_frame:
                 wave_time = wave / tr.stats.sampling_rate - wave_offset
                 self.add_p_markers(wave_time)
+        elif self.first_trigger:
+            self.add_p_markers(self.first_trigger)
 
         selected_trace = group_key
         self.plot_traces(selected_group_key=selected_trace)
@@ -387,7 +389,7 @@ class SeismicPlotter(QMainWindow):
         self.triggers[group_key] = [t_arr/tr.stats.sampling_rate for t_arr in triggers ] 
         
         if first_trigger_time is not None:
-            self.add_p_markers(first_trigger_time)
+            self.first_trigger = first_trigger_time
 
     def apply_trigger_to_selected(self):
         current_item = self.trace_list.currentItem()
