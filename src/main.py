@@ -446,12 +446,16 @@ class SeismicPlotter(QMainWindow):
     def toggle_deleted_trace(self):
         current_item = self.trace_list.currentItem()
         if current_item:
-            ret = QMessageBox.question(self,'', f"Are you sure to mark as removed trace: {current_item.text()}?", QMessageBox.Yes | QMessageBox.No)
-            if ret == QMessageBox.No:
-                return
             group_key = current_item.text()
-            self.csv_handler.mark_as_deleted(group_key)
+            new_status = self.csv_handler.toggle_discarded(group_key)
+            status_text = "discarded" if new_status else "not discarded" 
+            QMessageBox.information(
+                self,
+                "Review Status Changed",
+                f"Trace {group_key} has been {status_text}.",
+            )
             self.navigate_to_next_trace()
+            self.apply_filters()
         else:
             QMessageBox.warning(
                 self, "No Selection", "Please select a trace to toggle review status."

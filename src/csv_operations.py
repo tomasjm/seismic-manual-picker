@@ -56,6 +56,8 @@ class CSVHandler:
         self.save_data_to_csv()
         return not current_status
 
-    def mark_as_deleted(self, group_key):
-        self.data_df.loc[group_key, "deleted"] = True
+    def toggle_discarded(self, group_key):
+        current = self.data_df.loc[group_key, "deleted"] 
+        self.data_df.loc[group_key, "deleted"] = not current 
         self.save_data_to_csv() 
+        return not current
