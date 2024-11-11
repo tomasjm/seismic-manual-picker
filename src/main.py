@@ -466,7 +466,7 @@ class SeismicPlotter(QMainWindow):
         self.trace_list.clear()
         total_traces = len(self.file_groups)
         for group_key in self.file_groups.keys():
-            show_item = self.get_show_item_by_filter(self.filter_tagged.checkState(), self.filter_with_p.checkState(), group_key) 
+            show_item = self.get_show_item_by_filter(self.filter_tagged.checkState(), self.filter_with_p.checkState(), self.filter_discarded.checkState(), group_key) 
             if show_item:
                 self.trace_list.addItem(QListWidgetItem(group_key))
 
@@ -492,11 +492,12 @@ class SeismicPlotter(QMainWindow):
         visible_traces = self.trace_list.count()
         self.traces_label.setText(f"Loaded Traces: {visible_traces}/{total_traces}")
 
-    def get_show_item_by_filter(self, review_tagged, p_marked, group_key):
+    def get_show_item_by_filter(self, review_tagged, p_marked, deleted, group_key):
         show_item = True
             
         tagged_state = review_tagged 
         p_wave_state = p_marked 
+        deleted_state = deleted
         
         if tagged_state == Qt.Checked:
             show_item = show_item and self.data_df.loc[group_key, "needs_review"]
@@ -508,8 +509,11 @@ class SeismicPlotter(QMainWindow):
         elif p_wave_state == Qt.PartiallyChecked:
             show_item = show_item and pd.isnull(self.data_df.loc[group_key, "p_wave_frame"])
 
-        deleted = self.data_df.loc[group_key, "deleted"]
-        show_item = show_item and (pd.isna(deleted) or not deleted) 
+        if deleted_state == Qt.Checked:
+            show_item = show_item and self.data_df.loc[group_key, "deleted"]
+        elif deleted_state == Qt.PartiallyChecked:
+            show_item = show_item and not self.data_df.loc[group_key, "deleted"]
+
         return show_item
 
     def reset_view(self):

@@ -156,14 +156,19 @@ def setup_controls(window, sidebar, list_container):
     sidebar.addWidget(QLabel("Filter Options:"))
     window.filter_tagged = QCheckBox("Filter tagged for review events")
     window.filter_with_p = QCheckBox("Filter P marked events")
+    window.filter_discarded= QCheckBox("Filter discarded events")
     window.filter_tagged.setTristate(True)
     window.filter_with_p.setTristate(True)
+    window.filter_discarded.setTristate(True)
+    window.filter_discarded.setCheckState(Qt.PartiallyChecked)
     sidebar.addWidget(window.filter_tagged)
     sidebar.addWidget(window.filter_with_p)
+    sidebar.addWidget(window.filter_discarded)
 
     # Connect filter checkboxes
     window.filter_tagged.stateChanged.connect(window.apply_filters)
     window.filter_with_p.stateChanged.connect(window.apply_filters)
+    window.filter_discarded.stateChanged.connect(window.apply_filters)
 
     # Spacer
     sidebar.addStretch() 
