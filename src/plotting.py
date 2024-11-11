@@ -15,7 +15,8 @@ def plot_spectrogram( tr):
             {'mode': 'rgb',
                 'ticks': [(0.5, (33, 145, 140, 255)),
                         (1.0, (250, 230, 0, 255)),
-                        (0.0, (69, 4, 87, 255))]})
+                        (0.0, (0, 0, 0, 255))]})
+                        # (0.0, (69, 4, 87, 255))]})
     img.setImage(Sxx.T)
     img.setRect(times[0],freqs[0],times[-1]-times[0],freqs[-1]-freqs[0])
     return img
