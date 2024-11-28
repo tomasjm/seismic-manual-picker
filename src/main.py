@@ -8,6 +8,8 @@ from PyQt5.QtWidgets import (
     QListWidgetItem,
 )
 import uuid
+
+from obspy import UTCDateTime
 from src.plotting import plot_spectrogram
 from src.filter_window import FilterConfigWindow
 from src.trigger_window import TriggerConfigWindow
@@ -192,14 +194,14 @@ class SeismicPlotter(QMainWindow):
         if group_key in self.data_df.index and pd.notna(
             self.data_df.loc[group_key, "p_wave_frame"]
         ):
-            p_wave_frame = json.loads(self.data_df.loc[group_key, "p_wave_frame"])
+            p_wave_time_utc = json.loads(self.data_df.loc[group_key, "p_wave_frame"])
             st = self.traces[group_key]
             tr = st.select(channel="*Z")[0]
             wave_offset = 0
             if self.filter:
                 wave_offset = int(self.filter_params["offset"])
-            for wave in p_wave_frame:
-                wave_time = wave / tr.stats.sampling_rate - wave_offset
+            for wave_time_utc in p_wave_time_utc:
+                wave_time = UTCDateTime(wave_time_utc) - tr.stats.starttime - wave_offset
                 self.add_p_markers(wave_time)
         elif self.first_trigger is not None:
             self.add_p_markers(self.first_trigger)
@@ -271,12 +273,14 @@ class SeismicPlotter(QMainWindow):
             for id, lines in self.current_p_lines.items():
                 p_marker = lines.get('plot')
                 p_wave_time = p_marker.value()
-                p_wave_frame = calculate_wave_frame(  # Using utility function
-                    p_wave_time, 
-                    tr.stats.sampling_rate, 
-                    self.filter_params if self.filter else None
-                )
-                current_p_waves.append(p_wave_frame)
+                starttime = st[0].stats.starttime
+                real_p_wave_utc = starttime + p_wave_time
+                # p_wave_frame = calculate_wave_frame(  # Using utility function
+                #     p_wave_time, 
+                #     tr.stats.sampling_rate, 
+                #     self.filter_params if self.filter else None
+                # )
+                current_p_waves.append(real_p_wave_utc)
             self.csv_handler.update_p_wave_time(group_key, current_p_waves)
             QMessageBox.information(self, "Success", f"P-wave time for {group_key} saved successfully.")
 
