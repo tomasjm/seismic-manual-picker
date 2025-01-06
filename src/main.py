@@ -280,7 +280,7 @@ class SeismicPlotter(QMainWindow):
                 #     tr.stats.sampling_rate, 
                 #     self.filter_params if self.filter else None
                 # )
-                current_p_waves.append(real_p_wave_utc)
+                current_p_waves.append(str(real_p_wave_utc))
             self.csv_handler.update_p_wave_time(group_key, current_p_waves)
             QMessageBox.information(self, "Success", f"P-wave time for {group_key} saved successfully.")
 
