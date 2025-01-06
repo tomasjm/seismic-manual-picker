@@ -273,7 +273,7 @@ class SeismicPlotter(QMainWindow):
             for id, lines in self.current_p_lines.items():
                 p_marker = lines.get('plot')
                 p_wave_time = p_marker.value()
-                starttime = st[0].stats.starttime
+                starttime = tr.stats.starttime
                 wave_offset = 0
                 if self.filter:
                     wave_offset = int(self.filter_params["offset"])
