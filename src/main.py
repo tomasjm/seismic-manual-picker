@@ -274,7 +274,10 @@ class SeismicPlotter(QMainWindow):
                 p_marker = lines.get('plot')
                 p_wave_time = p_marker.value()
                 starttime = st[0].stats.starttime
-                real_p_wave_utc = starttime + p_wave_time
+                wave_offset = 0
+                if self.filter:
+                    wave_offset = int(self.filter_params["offset"])
+                real_p_wave_utc = starttime + p_wave_time + wave_offset
                 # p_wave_frame = calculate_wave_frame(  # Using utility function
                 #     p_wave_time, 
                 #     tr.stats.sampling_rate, 
