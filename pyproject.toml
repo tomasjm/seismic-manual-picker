@@ -5,14 +5,12 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "ipykernel>=6.29.5",
-    "ipython>=8.28.0",
-    "matplotlib",
-    "nicegui>=2.3.0",
-    "numpy>=2.1.1",
-    "obspy>=1.4.1",
-    "pandas>=2.2.3",
-    "pyqt5",
-    "pyqtgraph>=0.13.7",
-    "pyside6>=6.7.3",
+  "ipykernel>=6.29.5",
+  "ipython>=8.28.0",
+  "matplotlib",
+  "numpy>=2.1.1",
+  "obspy>=1.4.1",
+  "pandas>=2.2.3",
+  "pyqt5",
+  "pyqtgraph>=0.13.7",
 ]
